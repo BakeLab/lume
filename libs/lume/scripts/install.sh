@@ -31,7 +31,7 @@ APP_INSTALL_DIR="$HOME/.local/share/lume"
 
 # GitHub info
 GITHUB_REPO="trycua/cua"
-LATEST_RELEASE_URL="https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+# Never use releases/latest here: the monorepo has one repo-wide Latest.
 
 # Option to skip background service setup (default: install it)
 INSTALL_BACKGROUND_SERVICE=true
