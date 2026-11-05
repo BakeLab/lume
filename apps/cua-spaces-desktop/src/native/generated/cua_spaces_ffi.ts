@@ -12042,7 +12042,7 @@ export type AppChecklistRow = {
      */
     step: AppChecklistStep,
     /**
-     * "Add a machine".
+     * "Add a computer".
      */
     title: string,
     /**
@@ -21522,7 +21522,7 @@ export type AppDevicesInput = {
      */
     machineNames: Map<string, string>,
     /**
-     * The account's relay machines, for the "New machine" confirm badge
+     * The account's relay machines, for the "New computer" confirm badge
      * (S5). Empty on a relay that predates it, or when this device cannot
      * list them, same as `machine_names`.
      */
@@ -27052,7 +27052,7 @@ const FfiConverterTypeAppHostSetupRequest = (() => {
 
 export type AppHostFormView = {
     /**
-     * "Set up this machine".
+     * "Set up this computer".
      */
     title: string,
     /**
@@ -27613,7 +27613,7 @@ const FfiConverterTypeAppHostSetupChoice = (() => {
 
 export type AppHostPanelView = {
     /**
-     * "This machine".
+     * "This computer".
      */
     title: string,
     /**
@@ -29120,7 +29120,7 @@ export type AppListView = {
     empty: boolean,
     /**
      * One quiet line where the Spaces go while the list is not complete
-     * ("Reaching 6 machines…"), below what is known so far.
+     * ("Reaching 6 computers…"), below what is known so far.
      */
     reachingLine?: string
 }
@@ -29907,7 +29907,7 @@ const FfiConverterTypeAppMachinesViewRemove = (() => {
 
 export type AppMachinesViewRemoveAll = {
     /**
-     * "Remove old machines".
+     * "Remove old computers".
      */
     label: string,
     /**
@@ -29967,7 +29967,7 @@ export type AppMachinesViewGroup = {
      */
     id: string,
     /**
-     * "Your machines", "Offline for 30+ days (2)", "Team machines".
+     * "Your computers", "Offline for 30+ days (2)", "Team computers".
      */
     title: string,
     /**
@@ -30229,7 +30229,7 @@ export type AppMachinesViewToggle = {
      */
     id: string,
     /**
-     * "Let other machines create Spaces here", "Let other machines control
+     * "Let other computers create Spaces here", "Let other computers control
      * this desktop".
      */
     label: string,
@@ -30609,7 +30609,7 @@ export type AppMachinesViewMachine = {
      */
     togglesNote?: string,
     /**
-     * "Spaces on this machine".
+     * "Spaces on this computer".
      */
     spacesTitle: string,
     /**
@@ -30757,7 +30757,7 @@ const FfiConverterTypeAppMachinesViewMachine = (() => {
 
 export type AppMachinesView = {
     /**
-     * "3 machines, 2 online".
+     * "3 computers, 2 online".
      */
     summary: string,
     /**
