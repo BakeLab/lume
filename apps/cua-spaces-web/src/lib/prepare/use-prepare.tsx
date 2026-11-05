@@ -3,8 +3,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { firstMessage, newPendingId, useBridge, useFirstSpaceOffers, useSavedOnboarding, useSession, useSpaces } from "@/bridge";
-import { useNewOnboarding } from "@/bridge/flags";
+import { firstMessage, newPendingId, useBridge, useFirstRunSaved, useFirstSpaceOffers, useSavedOnboarding, useSession, useSpaces } from "@/bridge";
 import { useSummonIn } from "@/components/ask-first/use-summon-in";
 import { setPrepareSink } from "@/components/space-thread/queued";
 import { updateAskTask } from "@/lib/ask-first";
@@ -30,11 +29,10 @@ const POLL_MS = 800;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * Mounted once at the root: starts preparing at launch (while the person is in
- * onboarding), carries on after a quit, and keeps the driver's view of the host
- * current. It runs only with the new setup on (Settings, Advanced, Labs), which
- * also turns on the "Ask first" Home. The Space it prepares is a fresh Linux
- * Space, the one Home's first Linux job goes to, with the coding agent in it.
+ * Mounted once at the root: starts preparing once the first run is over,
+ * carries on after a quit, and keeps the driver's view of the host current.
+ * The Space it prepares is a fresh Linux Space, the one Home's first Linux job
+ * goes to, with the coding agent in it.
  */
 export function PrepareRoot(): null {
   const { core, data: host } = useBridge();
@@ -43,12 +41,14 @@ export function PrepareRoot(): null {
   const { offers, known } = useFirstSpaceOffers();
   const latestOffers = useRef(offers);
   latestOffers.current = offers;
-  const on = useNewOnboarding();
   // The new first run (CUA-3318) makes nothing the person didn't ask for: the home starts warming only once
   // the first run is done or skipped, not while it shows. A separate computer is the first run's own choice.
   const session = useSession();
   const savedOnboarding = useSavedOnboarding();
-  const firstRunOver = Boolean(session.data?.onboarding.completed || savedOnboarding.skipped);
+  // Only after a first run on this install: someone who set up with an older app and updates never gets a
+  // Space they didn't see coming (the run's own progress is kept only by this first run).
+  const ranFirstRunHere = useFirstRunSaved().newRun !== undefined;
+  const firstRunOver = ranFirstRunHere && Boolean(session.data?.onboarding.completed || savedOnboarding.skipped);
   // Only an agent found on this computer is prepared: one Cua only wrote files for has no sign-in to bring.
   const installed = useInstalledAgents();
   const harness = installed === null ? null : installed.has(DEFAULT_HARNESS) ? DEFAULT_HARNESS : (installed.values().next().value ?? null);
@@ -134,7 +134,7 @@ export function PrepareRoot(): null {
   }, [core]);
 
   // The offers must be read first: before that there is no image to make the home from.
-  const ready = Boolean(core && host && spaces && on && known);
+  const ready = Boolean(core && host && spaces && known);
 
   // Start at launch; a saved record resumes once.
   const driverNow = usePrepare().driver;

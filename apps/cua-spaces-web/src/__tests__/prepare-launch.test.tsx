@@ -8,7 +8,7 @@
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setFlagOverride } from "@/bridge";
+import { writeFirstRun } from "@/bridge";
 import { wasmBuilt } from "@/bridge/__tests__/testCore";
 import { resetConnectState } from "@/hooks/use-connectors";
 import { resetAskTasks } from "@/lib/ask-first";
@@ -19,11 +19,11 @@ import { mountApp, stubBrowserApis } from "./app-harness";
 stubBrowserApis();
 beforeEach(() => {
   localStorage.clear();
+  // Set up with this app's first run: the home warms only after one.
+  writeFirstRun({ newRun: { screen: "next" } });
   resetAskTasks();
   resetConnectState();
   resetPrepare();
-  setFlagOverride("spaces_ask_first_home", true);
-  setFlagOverride("spaces_new_onboarding", true);
 });
 afterEach(() => {
   cleanup();
@@ -48,6 +48,17 @@ async function compose(text: string) {
 }
 
 describe.skipIf(!wasmBuilt)("preparing the ask-first Space from launch", () => {
+  it("makes nothing for someone who set up with an older app and updates", { timeout: 30000 }, async () => {
+    writeFirstRun(null);
+    const calls: Call[] = [];
+    await mountApp("/home", { failsCreates: false, listsGhost: false, demo: { onboarded: true }, intercept: (op, args) => (calls.push({ op, args: args as Record<string, unknown> }), undefined) });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 800));
+    });
+    expect(calls.some((c) => c.op === "spaces.create")).toBe(false);
+    expect(getDriver()?.state?.wanted ?? false).toBe(false);
+  });
+
   it("makes the home at launch, adds the agent and says ready", { timeout: 40000 }, async () => {
     const calls: Call[] = [];
     await mountApp("/spaces", { failsCreates: false, listsGhost: false, demo: { onboarded: true }, intercept: (op, args) => (calls.push({ op, args: args as Record<string, unknown> }), undefined) });
@@ -120,23 +131,4 @@ describe.skipIf(!wasmBuilt)("preparing the ask-first Space from launch", () => {
     expect(calls.filter((c) => c.op === "spaces.create")).toHaveLength(1);
   });
 
-  it("does not start without the new setup, or without the new Home", { timeout: 30000 }, async () => {
-    setFlagOverride("spaces_new_onboarding", false);
-    const calls: Call[] = [];
-    await mountApp("/spaces", { failsCreates: false, listsGhost: false, demo: { onboarded: true }, intercept: (op, args) => (calls.push({ op, args: args as Record<string, unknown> }), undefined) });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 800));
-    });
-    expect(calls.some((c) => c.op === "spaces.create")).toBe(false);
-    expect(getDriver()?.state?.wanted ?? false).toBe(false);
-    cleanup();
-    resetPrepare();
-    setFlagOverride("spaces_ask_first_home", false);
-    setFlagOverride("spaces_new_onboarding", true);
-    await mountApp("/spaces", { failsCreates: false, listsGhost: false, demo: { onboarded: true }, intercept: (op, args) => (calls.push({ op, args: args as Record<string, unknown> }), undefined) });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 800));
-    });
-    expect(calls.some((c) => c.op === "spaces.create")).toBe(false);
-  });
 });
