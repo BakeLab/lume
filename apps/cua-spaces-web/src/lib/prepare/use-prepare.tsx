@@ -14,7 +14,7 @@ import { useInstalledAgents } from "@/components/ask-first/use-installed-agents"
 
 import { localPrepareStorage, PrepareDriver, type PrepareEnv } from "./driver";
 import { homeCreateRequest } from "./home-request";
-import { getDriver, markResumed, resumedThisLoad, setDriver, usePrepare } from "./store";
+import { getDriver, homeNameOf, markResumed, resumedThisLoad, setDriver, usePrepare } from "./store";
 
 /** The coding app the first Space is for when it is on this computer: the first installed one otherwise. */
 export const DEFAULT_HARNESS = "claude-code";
@@ -24,7 +24,7 @@ const SESSION_TIMEOUT_MS = 4 * 60_000;
 /** How long a create the host started before this page loaded may take (a slow first run). */
 const CREATE_FOLLOW_MS = 40 * 60_000;
 /** The name of the Space this prepares: fixed, so a second page load finds the first one's create. */
-export const homeNameOf = (harness: string) => `home-${harness}`;
+export { homeNameOf } from "./store";
 const POLL_MS = 800;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

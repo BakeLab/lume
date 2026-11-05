@@ -3,7 +3,7 @@
 
 // The in-app Pro and Teams prompts, on the real routes and the wasm core:
 // the plan card in Settings and the plan under the account name (always
-// there), the second-machine prompt on Machines, and the share prompt. The
+// there), the second-computer prompt under your computers, and the share prompt. The
 // rules (one prompt every 3 days, never during a live session, closable) are
 // the core's `upsell`.
 
@@ -68,7 +68,7 @@ describe.skipIf(!wasmBuilt)("in-app Pro and Teams prompts (real routes, wasm cor
       return el as HTMLElement;
     });
     expect(card.getAttribute("data-plan-card")).toBe("free");
-    expect(card.textContent).toBe("Free: 2 machines at once and 20 hours a month away from the machine you're using.");
+    expect(card.textContent).toBe("Free: 2 computers at once and 20 hours a month away from the computer you're using.");
     // "Free plan" shows once, in the plan row.
     const tab = document.querySelector<HTMLElement>('[data-settings-tab="account"]')!;
     expect(tab.textContent).not.toContain("Free plan");
@@ -92,8 +92,8 @@ describe.skipIf(!wasmBuilt)("in-app Pro and Teams prompts (real routes, wasm cor
     expect(sessions.getAttribute("aria-valuemax")).toBe("5");
     expect(sessions.hasAttribute("data-full")).toBe(true);
     const hours = document.querySelector('[data-usage-meter="Remote hours"]')!;
-    expect(document.body.textContent).toContain("Machines in use right now");
-    expect(document.body.textContent).toContain("Time away from this machine");
+    expect(document.body.textContent).toContain("Computers in use right now");
+    expect(document.body.textContent).toContain("Time away from this computer");
     expect(hours.getAttribute("aria-valuenow")).toBe("12");
     expect(hours.hasAttribute("data-full")).toBe(false);
     const card = await waitFor(() => {
@@ -115,7 +115,7 @@ describe.skipIf(!wasmBuilt)("in-app Pro and Teams prompts (real routes, wasm cor
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    expect(card.textContent).toBe("Pro: 5 machines at once and 200 hours a month away from the machine you're using.");
+    expect(card.textContent).toBe("Pro: 5 computers at once and 200 hours a month away from the computer you're using.");
     expect(document.querySelector("[data-plan-primary]")).toBeNull();
     expect(document.querySelector("[data-manage-account]")?.textContent).toBe("Manage account on the web");
   });
@@ -142,10 +142,10 @@ describe.skipIf(!wasmBuilt)("in-app Pro and Teams prompts (real routes, wasm cor
     await waitFor(() => expect(features(tracked)).toContain("upsell_account_menu_click"));
   });
 
-  it("a second machine over the relay: one line with Get Pro, shown once, closable", async () => {
+  it("a second computer over the relay: one line with Get Pro under your computers, shown once, closable", async () => {
     const opened: string[] = [];
     const tracked: unknown[] = [];
-    const { router } = await mountApp("/machines", host(idle(), opened, tracked));
+    const { router } = await mountApp("/spaces", host(idle(), opened, tracked));
     await router.load();
     const prompt = await waitFor(() => {
       const el = document.querySelector("[data-upsell=machine]");
@@ -161,30 +161,30 @@ describe.skipIf(!wasmBuilt)("in-app Pro and Teams prompts (real routes, wasm cor
     await waitFor(() => expect(features(tracked)).toEqual(expect.arrayContaining(["upsell_machine_click", "upsell_machine_dismiss"])));
     cleanup();
     // Closed: it does not come back on the next visit.
-    const again = await mountApp("/machines", host(idle()));
+    const again = await mountApp("/spaces", host(idle()));
     await again.router.load();
     await act(() => new Promise((r) => setTimeout(r, 50)));
     expect(document.querySelector("[data-upsell=machine]")).toBeNull();
   });
 
   it("never during a live session", async () => {
-    const { router } = await mountApp("/machines", host(idle({ liveSessions: 1 })));
+    const { router } = await mountApp("/spaces", host(idle({ liveSessions: 1 })));
     await router.load();
-    await waitFor(() => expect(document.querySelector("[data-machine-row], [aria-label=Machines]")).toBeTruthy());
+    await waitFor(() => expect(document.querySelector("[data-spaces-tree]")).toBeTruthy());
     await act(() => new Promise((r) => setTimeout(r, 50)));
     expect(document.querySelector("[data-upsell]")).toBeNull();
   });
 
   it("never during an agent run", async () => {
-    const { router } = await mountApp("/machines", host(idle(), [], [], true));
+    const { router } = await mountApp("/spaces", host(idle(), [], [], true));
     await router.load();
-    await waitFor(() => expect(document.querySelector("[aria-label=Machines]")).toBeTruthy());
+    await waitFor(() => expect(document.querySelector("[data-spaces-tree]")).toBeTruthy());
     await act(() => new Promise((r) => setTimeout(r, 80)));
     expect(document.querySelector("[data-upsell]")).toBeNull();
   });
 
   it("not on Pro: a second machine has nothing to sell", async () => {
-    const { router } = await mountApp("/machines", host(idle({ plan: "pro" })));
+    const { router } = await mountApp("/spaces", host(idle({ plan: "pro" })));
     await router.load();
     await act(() => new Promise((r) => setTimeout(r, 50)));
     expect(document.querySelector("[data-upsell]")).toBeNull();

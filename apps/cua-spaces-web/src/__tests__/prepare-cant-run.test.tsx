@@ -67,7 +67,7 @@ describe.skipIf(!wasmBuilt)("preparing on a Mac that can't run Spaces", () => {
         fireEvent.click(button);
         await new Promise((r) => setTimeout(r, 20));
       });
-      await waitFor(() => expect(router.state.location.pathname).toBe("/machines"));
+      await waitFor(() => expect(router.state.location.pathname).toBe("/spaces"));
       expect(router.state.location.search).toMatchObject({ add: true });
     });
   }
