@@ -96,7 +96,7 @@ struct Sip: AsyncParsableCommand {
         do {
             try child.start()
             let details = try await waitForSSHReady(
-                controller: controller, child: child, context: "credential preflight", deadline: deadline,
+                controller: controller, child: child, password: password, context: "credential preflight", deadline: deadline,
                 maxSeconds: 300)
             guard let ip = details.ipAddress else {
                 throw SipError.credentialPreflightFailed("VM did not report an IP address")
@@ -104,7 +104,7 @@ struct Sip: AsyncParsableCommand {
 
             let ssh = SSHClient(host: ip, port: 22, user: adminUser, password: password)
             do {
-                let result = try await ssh.execute(
+                let result = try await ssh.executeWithFallback(
                     command: "true", timeout: try deadline.remaining(upTo: 30, operation: "credential preflight"))
                 guard result.exitCode == 0 else {
                     throw SipError.credentialPreflightFailed("SSH command exited with status \(result.exitCode)")
@@ -178,13 +178,13 @@ struct Sip: AsyncParsableCommand {
         do {
             try child.start()
             let details = try await waitForSSHReady(
-                controller: controller, child: child, context: "verification boot", deadline: deadline, maxSeconds: 300)
+                controller: controller, child: child, password: password, context: "verification boot", deadline: deadline, maxSeconds: 300)
             guard let ip = details.ipAddress else {
                 throw SipError.verificationFailed("VM did not report an IP address")
             }
 
             let ssh = SSHClient(host: ip, port: 22, user: adminUser, password: password)
-            let result = try await ssh.execute(
+            let result = try await ssh.executeWithFallback(
                 command: "csrutil status", timeout: try deadline.remaining(upTo: 30, operation: "SIP verification"))
             let statusOutput = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
             let matches = result.exitCode == 0 && Self.statusMatches(statusOutput, expected: state)
@@ -209,16 +209,25 @@ struct Sip: AsyncParsableCommand {
     }
 
     @MainActor private func waitForSSHReady(
-        controller: LumeController, child: SipChildProcess, context: String, deadline: SipDeadline, maxSeconds: Double
+        controller: LumeController, child: SipChildProcess, password: String, context: String, deadline: SipDeadline, maxSeconds: Double
     ) async throws -> VMDetails {
         let allowed = try deadline.remaining(upTo: maxSeconds, operation: context)
         let localDeadline = ContinuousClock.now.advanced(by: .seconds(allowed))
         while ContinuousClock.now < localDeadline {
             try child.ensureRunning(context: context, redacting: [])
             if let details = try? controller.getDetails(name: name, storage: storage), details.status == "running",
-                details.sshAvailable == true, let ip = details.ipAddress, !ip.isEmpty
+                let ip = details.ipAddress, !ip.isEmpty
             {
-                return details
+                // A direct TCP probe may be denied access to vmnet even when
+                // the system SSH client can reach the guest.
+                do {
+                    let ssh = SSHClient(host: ip, port: 22, user: adminUser, password: password)
+                    let result = try await ssh.executeWithFallback(
+                        command: "true", timeout: try deadline.remaining(upTo: 5, operation: context))
+                    if result.exitCode == 0 { return details }
+                } catch let error as SSHError {
+                    if case .authenticationFailed = error { throw error }
+                }
             }
             try await sleep(seconds: min(5, try deadline.remaining(upTo: 5, operation: context)))
         }
@@ -433,16 +442,20 @@ struct Sip: AsyncParsableCommand {
             seconds: 45, operation: "recoveryOS main-menu transition", heartbeat: heartbeat, timeout: timeout)
         try driver.snapshot("02-recoveryOS-menu")
 
-        try driver.click(x: 243, y: 14)
+        // Use menu navigation rather than a fixed pixel position: Recovery
+        // menu titles move between macOS releases and display resolutions.
+        try driver.key("ctrl-f2")
         try await pause(seconds: 1, operation: "Utilities menu", heartbeat: heartbeat, timeout: timeout)
-        for _ in 0..<3 {
-            try driver.key("down")
-            try await pause(seconds: 0.2, operation: "Utilities menu", heartbeat: heartbeat, timeout: timeout)
-        }
+        try driver.key("u")
+        try driver.key("down")
+        try driver.key("t")
         try driver.snapshot("03-terminal-highlighted")
         try driver.key("enter")
         try await pause(seconds: 4, operation: "Terminal launch", heartbeat: heartbeat, timeout: timeout)
         try driver.snapshot("04-terminal-opened")
+        _ = try await driver.waitForText(
+            containing: ["bash", "zsh"], rejecting: [],
+            deadlineSeconds: try timeout(20, "Recovery Terminal"), label: "Recovery Terminal", heartbeat: heartbeat)
 
         try driver.type(state == .off ? "csrutil disable" : "csrutil enable")
         try driver.key("enter")
