@@ -35,7 +35,7 @@
         "resourceFacts": [
           "Kind: Container",
           "Architecture: ARM",
-          "Disk: 2.9–6.9 GB initially; grows with use"
+          "Disk: 3.1–7.3 GB initially; grows with use"
         ],
         "step": 0,
         "summary": [
@@ -46,7 +46,7 @@
           "Architecture: ARM",
           "Runtime: Container on this Mac (gVisor when installed)",
           "Resources: 2 cores, 4 GB memory",
-          "Disk: About 3–7 GB",
+          "Disk: About 4–8 GB",
           "Name: space-000000002a",
           "When ready: Open the desktop"
         ],
@@ -89,7 +89,7 @@
         "resourceFacts": [
           "Kind: Container",
           "Architecture: ARM",
-          "Disk: 2.9–6.9 GB initially; grows with use"
+          "Disk: 3.1–7.3 GB initially; grows with use"
         ],
         "step": 0,
         "summary": [
@@ -100,7 +100,7 @@
           "Architecture: ARM",
           "Runtime: Container on this Mac (gVisor when installed)",
           "Resources: 2 cores, 4 GB memory",
-          "Disk: About 3–7 GB",
+          "Disk: About 4–8 GB",
           "Name: space-000000002a",
           "When ready: Open the desktop"
         ],
@@ -142,7 +142,7 @@
         "price": null,
         "resourceFacts": [
           "Kind: Container",
-          "Disk: 3.0–7.2 GB initially; grows with use"
+          "Disk: 3.2–7.7 GB initially; grows with use"
         ],
         "step": 0,
         "summary": [
@@ -245,7 +245,7 @@
         "price": null,
         "resourceFacts": [
           "Kind: Container",
-          "Disk: 3.0–7.2 GB initially; grows with use"
+          "Disk: 3.2–7.7 GB initially; grows with use"
         ],
         "step": 0,
         "summary": [
@@ -296,7 +296,7 @@
         "price": null,
         "resourceFacts": [
           "Kind: Container",
-          "Disk: 3.0–7.2 GB initially; grows with use"
+          "Disk: 3.2–7.7 GB initially; grows with use"
         ],
         "step": 0,
         "summary": [
@@ -402,7 +402,7 @@
         "price": null,
         "resourceFacts": [
           "Kind: Container",
-          "Disk: 3.0–7.2 GB initially; grows with use"
+          "Disk: 3.2–7.7 GB initially; grows with use"
         ],
         "step": 0,
         "summary": [
@@ -449,7 +449,7 @@
         "price": null,
         "resourceFacts": [
           "Kind: Container",
-          "Disk: 3.0–7.2 GB initially; grows with use"
+          "Disk: 3.2–7.7 GB initially; grows with use"
         ],
         "step": 1,
         "summary": [
@@ -496,7 +496,7 @@
         "price": null,
         "resourceFacts": [
           "Kind: Container",
-          "Disk: 3.0–7.2 GB initially; grows with use"
+          "Disk: 3.2–7.7 GB initially; grows with use"
         ],
         "step": 2,
         "summary": [
@@ -540,7 +540,7 @@
         "price": null,
         "resourceFacts": [
           "Kind: Container",
-          "Disk: 3.0–7.2 GB initially; grows with use"
+          "Disk: 3.2–7.7 GB initially; grows with use"
         ],
         "step": 3,
         "summary": [
@@ -579,7 +579,7 @@
         "resourceFacts": [
           "Kind: Container",
           "Architecture: ARM",
-          "Disk: 2.9–6.9 GB initially; grows with use"
+          "Disk: 3.1–7.3 GB initially; grows with use"
         ],
         "step": 3,
         "summary": [
@@ -590,7 +590,7 @@
           "Architecture: ARM",
           "Runtime: Container on this Mac (gVisor when installed)",
           "Resources: 2 cores, 4 GB memory",
-          "Disk: About 3–7 GB",
+          "Disk: About 4–8 GB",
           "Name: space-000000002a",
           "When ready: Open the desktop"
         ],
@@ -620,7 +620,7 @@
         "resourceFacts": [
           "Kind: Container",
           "Architecture: ARM",
-          "Disk: 2.9–6.9 GB initially; grows with use"
+          "Disk: 3.1–7.3 GB initially; grows with use"
         ],
         "step": 3,
         "summary": [
@@ -631,7 +631,7 @@
           "Architecture: ARM",
           "Runtime: Container on this Mac (gVisor when installed)",
           "Resources: 2 cores, 4 GB memory",
-          "Disk: About 3–7 GB",
+          "Disk: About 4–8 GB",
           "Name: space-000000002a",
           "When ready: Open the desktop"
         ],
