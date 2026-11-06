@@ -10,7 +10,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.1"),
-        .package(url: "https://github.com/apple/swift-format.git", branch: ("release/6.0")),
         .package(url: "https://github.com/mhdhejazi/Dynamic", branch: "master"),
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.12.0"),
