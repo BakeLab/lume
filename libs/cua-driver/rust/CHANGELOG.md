@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.40.0](https://github.com/trycua/cua/compare/cua-driver-rs-v0.39.0...cua-driver-rs-v0.40.0) (2026-11-06)
+
+
+### Features
+
+* **cua-driver:** keep typed secrets out of recordings ([#6333](https://github.com/trycua/cua/issues/6333)) ([69d4280](https://github.com/trycua/cua/commit/69d42802d44546c78318778431a1af827353a7db))
+
+
+### Bug Fixes
+
+* **cua-driver-core:** derive desktop coordination from the action contract ([#6638](https://github.com/trycua/cua/issues/6638)) ([13fdf9c](https://github.com/trycua/cua/commit/13fdf9cb6a805f3aaa88fe68bdc15e49c3f923cb))
+* **cua-driver-core:** gate YAML capability-manifest tests on the yaml feature ([#6627](https://github.com/trycua/cua/issues/6627)) ([3d7d657](https://github.com/trycua/cua/commit/3d7d6573a351a555a6d690e7ca7c5c0f64e71b8f))
+
 ## [0.39.0](https://github.com/trycua/cua/compare/cua-driver-rs-v0.38.0...cua-driver-rs-v0.39.0) (2026-11-05)
 
 
