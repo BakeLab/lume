@@ -107,6 +107,39 @@ public actor SSHClient {
         }
     }
 
+    /// Execute a command with the system SSH client when NIO cannot open the
+    /// guest connection. Some macOS networking environments permit Apple's
+    /// system-signed `/usr/bin/ssh` to reach vmnet guests when NIO is denied.
+    func executeWithFallback(command: String, timeout: TimeInterval = 60) async throws -> SSHResult {
+        try await Self.executeWithFallback(
+            primary: { try await self.execute(command: command, timeout: timeout) },
+            fallback: {
+                try SystemSSHClient(
+                    host: self.host,
+                    port: UInt16(self.port),
+                    user: self.user,
+                    password: self.password
+                ).execute(command: command, timeout: timeout)
+            }
+        )
+    }
+
+    /// Keep fallback behavior limited to transport failures. Authentication,
+    /// command, and timeout errors must remain visible to the caller.
+    static func executeWithFallback(
+        primary: @Sendable () async throws -> SSHResult,
+        fallback: @Sendable () throws -> SSHResult
+    ) async throws -> SSHResult {
+        do {
+            return try await primary()
+        } catch let error as SSHError {
+            guard case .connectionFailed = error else {
+                throw error
+            }
+            return try fallback()
+        }
+    }
+
     /// Start an interactive SSH session
     public func interactive() async throws {
         let channel = try await connect()

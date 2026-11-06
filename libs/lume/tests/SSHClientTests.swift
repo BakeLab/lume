@@ -22,6 +22,50 @@ func clientTeardownIsSafeOnEventLoop() async throws {
     #expect(client.withLockedValue { $0 == nil })
 }
 
+@Test("SSH command falls back to system SSH after a NIO connection failure")
+func sshCommandFallsBackOnConnectionFailure() async throws {
+    let fallbackCalled = NIOLockedValueBox(false)
+    let expected = SSHResult(exitCode: 0, output: "health_check_ok")
+
+    let result = try await SSHClient.executeWithFallback(
+        primary: { throw SSHError.connectionFailed("operation not permitted") },
+        fallback: {
+            fallbackCalled.withLockedValue { $0 = true }
+            return expected
+        }
+    )
+
+    #expect(result.exitCode == expected.exitCode)
+    #expect(result.output == expected.output)
+    #expect(fallbackCalled.withLockedValue { $0 })
+}
+
+@Test("SSH command does not fall back after authentication failure")
+func sshCommandDoesNotFallbackOnAuthenticationFailure() async throws {
+    let fallbackCalled = NIOLockedValueBox(false)
+
+    do {
+        try await SSHClient.executeWithFallback(
+            primary: { throw SSHError.authenticationFailed },
+            fallback: {
+                fallbackCalled.withLockedValue { $0 = true }
+                return SSHResult(exitCode: 0, output: "unexpected success")
+            }
+        )
+        Issue.record("Expected authentication failure")
+    } catch let error as SSHError {
+        if case .authenticationFailed = error {
+            // Expected: authentication errors must not use the fallback.
+        } else {
+            Issue.record("Unexpected SSH error: \(error)")
+        }
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+
+    #expect(!fallbackCalled.withLockedValue { $0 })
+}
+
 @Test("SSH child promise is not created when handler lookup fails")
 func childPromiseIsCreatedAfterHandlerLookup() throws {
     let eventLoop = EmbeddedEventLoop()

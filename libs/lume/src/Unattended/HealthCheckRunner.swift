@@ -44,7 +44,7 @@ struct HealthCheckRunner {
                     password: password
                 )
 
-                let result = try await sshClient.execute(
+                let result = try await sshClient.executeWithFallback(
                     command: "echo health_check_ok",
                     timeout: TimeInterval(timeout)
                 )
@@ -118,7 +118,7 @@ struct HealthCheckRunner {
             }
 
             do {
-                let result = try await sshClient.execute(command: actualCommand, timeout: 60)
+                let result = try await sshClient.executeWithFallback(command: actualCommand, timeout: 60)
 
                 if result.exitCode != 0 {
                     Logger.info("SSH command returned non-zero exit code", metadata: [
