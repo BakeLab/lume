@@ -37,11 +37,10 @@ log() {
 # Check required environment variables
 required_vars=(
   "CERT_APPLICATION_NAME"
-  "CERT_INSTALLER_NAME"
-  "APPLE_ID"
-  "TEAM_ID"
-  "APP_SPECIFIC_PASSWORD"
 )
+if [ "${SKIP_NOTARIZATION:-false}" != "true" ]; then
+  required_vars+=("CERT_INSTALLER_NAME" "TEAM_ID" "APPLE_ID" "APP_SPECIFIC_PASSWORD")
+fi
 
 for var in "${required_vars[@]}"; do
   if [ -z "${!var}" ]; then
@@ -74,6 +73,7 @@ log "essential" "Assembling .app bundle..."
 
 APP_BUNDLE=".release/lume.app"
 rm -rf "$APP_BUNDLE"
+rm -f .release/lume.pkg .release/lume-*.tar.gz .release/lume-*.pkg.tar.gz
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
@@ -130,33 +130,37 @@ codesign -dvv "$APP_BUNDLE" 2>&1
 codesign --verify --strict --deep "$APP_BUNDLE" 2>&1 || { log "error" "Bundle signature verification FAILED"; exit 1; }
 log "essential" "Signature verified successfully."
 
-# --- Package as .pkg installer ---
-log "essential" "Building installer package..."
+if [ "${SKIP_NOTARIZATION:-false}" != "true" ]; then
+  # --- Package as .pkg installer ---
+  log "essential" "Building installer package..."
 
-TEMP_ROOT=$(mktemp -d)
-mkdir -p "$TEMP_ROOT/usr/local/share/lume"
-# Use ditto to preserve code signatures and extended attributes
-ditto "$APP_BUNDLE" "$TEMP_ROOT/usr/local/share/lume/lume.app"
+  TEMP_ROOT=$(mktemp -d)
+  mkdir -p "$TEMP_ROOT/usr/local/share/lume"
+  # Use ditto to preserve code signatures and extended attributes
+  ditto "$APP_BUNDLE" "$TEMP_ROOT/usr/local/share/lume/lume.app"
 
-if ! pkgbuild --root "$TEMP_ROOT" \
-         --identifier "com.trycua.lume" \
-         --version "$BUNDLE_VERSION" \
-         --install-location "/" \
-         --sign "$CERT_INSTALLER_NAME" \
-         ./.release/lume.pkg; then
-    log "error" "Failed to build installer package"
-    exit 1
+  if ! pkgbuild --root "$TEMP_ROOT" \
+           --identifier "com.trycua.lume" \
+           --version "$BUNDLE_VERSION" \
+           --install-location "/" \
+           --sign "$CERT_INSTALLER_NAME" \
+           ./.release/lume.pkg; then
+      log "error" "Failed to build installer package"
+      exit 1
+  fi
+
+  if [ ! -f "./.release/lume.pkg" ]; then
+      log "error" "Package file ./.release/lume.pkg was not created"
+      exit 1
+  fi
+
+  log "essential" "Package created successfully"
 fi
 
-# Verify the package was created
-if [ ! -f "./.release/lume.pkg" ]; then
-    log "error" "Package file ./.release/lume.pkg was not created"
-    exit 1
-fi
-
-log "essential" "Package created successfully"
-
-# --- Notarize ---
+# --- Notarize (optional for internal-only builds) ---
+if [ "${SKIP_NOTARIZATION:-false}" = "true" ]; then
+  log "essential" "Skipping notarization for internal-only build."
+else
 log "essential" "Submitting for notarization..."
 if [ "$LOG_LEVEL" = "minimal" ] || [ "$LOG_LEVEL" = "none" ]; then
   # Minimal output - capture ID but hide details
@@ -230,6 +234,7 @@ log "essential" "Stapling notarization ticket to .app bundle..."
 if ! xcrun stapler staple "$APP_BUNDLE" > /dev/null 2>&1; then
   log "normal" "Note: Could not staple .app bundle directly (this is expected when notarizing via .pkg)"
 fi
+fi
 
 # --- Create release archives ---
 
@@ -258,7 +263,9 @@ log "essential" "Creating version-specific archives (${VERSION})..."
 tar -czf "lume-${VERSION}-${OS_IDENTIFIER}.tar.gz" lume lume.app > /dev/null 2>&1
 
 # Package the installer
-tar -czf "lume-${VERSION}-${OS_IDENTIFIER}.pkg.tar.gz" lume.pkg > /dev/null 2>&1
+if [ -f lume.pkg ]; then
+  tar -czf "lume-${VERSION}-${OS_IDENTIFIER}.pkg.tar.gz" lume.pkg > /dev/null 2>&1
+fi
 
 # Create sha256 checksum file
 log "essential" "Generating checksums..."
@@ -270,9 +277,11 @@ log "essential" "Files in release directory:"
 ls -la "$RELEASE_DIR"
 
 # Ensure correct permissions
-chmod 644 "$RELEASE_DIR"/*.tar.gz "$RELEASE_DIR"/*.pkg.tar.gz "$RELEASE_DIR"/checksums.txt
+chmod 644 "$RELEASE_DIR"/*.tar.gz "$RELEASE_DIR"/checksums.txt
 
 # Clean up
-rm -rf "$TEMP_ROOT"
+if [ -n "${TEMP_ROOT:-}" ]; then
+  rm -rf "$TEMP_ROOT"
+fi
 
 log "essential" "Build and packaging completed successfully."

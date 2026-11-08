@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to notarize (without v prefix)"
+        description: "Version to build (without v prefix)"
         required: true
         default: "0.1.0"
+      notarize:
+        description: "Submit the signed build to Apple notarization (disable for internal-only builds)"
+        required: true
+        type: boolean
+        default: true
   workflow_call:
     inputs:
       version:
@@ -31,21 +36,22 @@ on:
         required: false
         default: ""
         type: string
+      notarize:
+        description: "Submit the signed build to Apple notarization"
+        required: false
+        default: true
+        type: boolean
     secrets:
       APPLICATION_CERT_BASE64:
         required: true
       INSTALLER_CERT_BASE64:
-        required: true
+        required: false
       CERT_PASSWORD:
         required: true
       APPLE_ID:
-        required: true
-      TEAM_ID:
-        required: true
+        required: false
       APP_SPECIFIC_PASSWORD:
-        required: true
-      DEVELOPER_NAME:
-        required: true
+        required: false
       PROVISIONING_PROFILE_BASE64:
         required: true
 
@@ -66,9 +72,10 @@ env:
   INSTALLER_CERT_BASE64: ${{ secrets.INSTALLER_CERT_BASE64 }}
   CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
   APPLE_ID: ${{ secrets.APPLE_ID }}
-  TEAM_ID: ${{ secrets.TEAM_ID }}
+  # Public certificate identity metadata; keep it out of Actions secrets.
+  TEAM_ID: YCK386LBJ7
   APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
-  DEVELOPER_NAME: ${{ secrets.DEVELOPER_NAME }}
+  DEVELOPER_NAME: Cua AI, Inc.
   PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
 
 jobs:
@@ -134,6 +141,7 @@ jobs:
           APPLICATION_CERT_BASE64: ${{ secrets.APPLICATION_CERT_BASE64 }}
           INSTALLER_CERT_BASE64: ${{ secrets.INSTALLER_CERT_BASE64 }}
           CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+          NOTARIZE: ${{ inputs.notarize }}
           KEYCHAIN_PASSWORD: "temp_password"
         run: |
           # Create a temporary keychain
@@ -144,11 +152,14 @@ jobs:
 
           # Import certificates
           echo $APPLICATION_CERT_BASE64 | base64 --decode > application.p12
-          echo $INSTALLER_CERT_BASE64 | base64 --decode > installer.p12
-
-          # Import certificates silently (minimize output)
           security import application.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/pkgbuild > /dev/null 2>&1
-          security import installer.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/pkgbuild > /dev/null 2>&1
+
+          # The internal artifact is an app bundle archive; only public builds
+          # need the Developer ID Installer identity for a signed .pkg.
+          if [ "$NOTARIZE" = "true" ]; then
+            echo $INSTALLER_CERT_BASE64 | base64 --decode > installer.p12
+            security import installer.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/pkgbuild > /dev/null 2>&1
+          fi
 
           # Allow codesign to access the certificates (minimal output)
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain > /dev/null 2>&1
@@ -156,25 +167,27 @@ jobs:
           # Verify certificates were imported
           echo "Verifying signing identities..."
           CERT_COUNT=$(security find-identity -v -p codesigning build.keychain | grep -c "Developer ID Application" || echo "0")
-          INSTALLER_COUNT=$(security find-identity -v build.keychain | grep -c "Developer ID Installer" || echo "0")
-
           if [ "$CERT_COUNT" -eq 0 ]; then
             echo "Error: No Developer ID Application certificate found"
             security find-identity -v -p codesigning build.keychain
             exit 1
           fi
 
-          if [ "$INSTALLER_COUNT" -eq 0 ]; then
-            echo "Error: No Developer ID Installer certificate found"  
-            security find-identity -v build.keychain
-            exit 1
+          if [ "$NOTARIZE" = "true" ]; then
+            INSTALLER_COUNT=$(security find-identity -v build.keychain | grep -c "Developer ID Installer" || echo "0")
+            if [ "$INSTALLER_COUNT" -eq 0 ]; then
+              echo "Error: No Developer ID Installer certificate found"
+              security find-identity -v build.keychain
+              exit 1
+            fi
+            echo "Found $CERT_COUNT Developer ID Application certificate(s) and $INSTALLER_COUNT Developer ID Installer certificate(s)"
+          else
+            echo "Found $CERT_COUNT Developer ID Application certificate(s)"
           fi
-
-          echo "Found $CERT_COUNT Developer ID Application certificate(s) and $INSTALLER_COUNT Developer ID Installer certificate(s)"
           echo "All required certificates verified successfully"
 
           # Clean up certificate files
-          rm application.p12 installer.p12
+          rm -f application.p12 installer.p12
 
       - name: Install Provisioning Profile
         env:
@@ -188,13 +201,14 @@ jobs:
         id: build_notarize
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          TEAM_ID: ${{ secrets.TEAM_ID }}
+          TEAM_ID: YCK386LBJ7
           APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
           # These will now reference the imported certificates
-          CERT_APPLICATION_NAME: "Developer ID Application: ${{ secrets.DEVELOPER_NAME }} (${{ secrets.TEAM_ID }})"
-          CERT_INSTALLER_NAME: "Developer ID Installer: ${{ secrets.DEVELOPER_NAME }} (${{ secrets.TEAM_ID }})"
+          CERT_APPLICATION_NAME: "Developer ID Application: Cua AI, Inc. (YCK386LBJ7)"
+          CERT_INSTALLER_NAME: "Developer ID Installer: Cua AI, Inc. (YCK386LBJ7)"
           VERSION: ${{ steps.set_version.outputs.version }}
           BUNDLE_VERSION: ${{ inputs.bundle_version || steps.set_version.outputs.version }}
+          SKIP_NOTARIZATION: ${{ inputs.notarize == false }}
         working-directory: ./libs/lume
         run: |
           # Minimal debug information
@@ -248,11 +262,15 @@ jobs:
 
           # Create OS-tagged symlinks
           ln -sf "lume-${VERSION}-${OS_IDENTIFIER}.tar.gz" "lume-darwin.tar.gz"
-          ln -sf "lume-${VERSION}-${OS_IDENTIFIER}.pkg.tar.gz" "lume-darwin.pkg.tar.gz"
+          if [ -f "lume-${VERSION}-${OS_IDENTIFIER}.pkg.tar.gz" ]; then
+            ln -sf "lume-${VERSION}-${OS_IDENTIFIER}.pkg.tar.gz" "lume-darwin.pkg.tar.gz"
+          fi
 
           # Create simple symlinks
           ln -sf "lume-${VERSION}-${OS_IDENTIFIER}.tar.gz" "lume.tar.gz"
-          ln -sf "lume-${VERSION}-${OS_IDENTIFIER}.pkg.tar.gz" "lume.pkg.tar.gz"
+          if [ -f "lume-${VERSION}-${OS_IDENTIFIER}.pkg.tar.gz" ]; then
+            ln -sf "lume-${VERSION}-${OS_IDENTIFIER}.pkg.tar.gz" "lume.pkg.tar.gz"
+          fi
 
           # List all files (including symlinks)
           echo "Files with symlinks in release directory:"
@@ -268,10 +286,10 @@ jobs:
           done
           ls -lh release-upload
 
-      - name: Upload notarized release assets
+      - name: Upload signed build assets
         uses: actions/upload-artifact@v4
         with:
-          name: lume-release-assets
+          name: ${{ inputs.notarize && 'lume-release-assets' || 'lume-internal-signed-assets' }}
           path: ./libs/lume/.release/release-upload/
           if-no-files-found: error
 
