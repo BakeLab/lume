@@ -92,17 +92,16 @@ final class UnattendedInstaller {
                 "ip": vmIP
             ])
         } catch {
-            vmTask.cancel()
             try? await vm.stop()
+            await waitForVMTask(vmTask)
             throw error
         }
 
         try await Task.sleep(nanoseconds: 10_000_000_000)
 
         Logger.info("Stopping VM before offline patch", metadata: ["vm": vm.name])
-        vmTask.cancel()
         try? await vm.stop()
-        try await Task.sleep(nanoseconds: 3_000_000_000)
+        await waitForVMTask(vmTask)
     }
 
     private func verifySetup(vm: VM, config: UnattendedConfig, vncPort: Int) async throws {
@@ -192,17 +191,30 @@ final class UnattendedInstaller {
             }
 
             Logger.info("Offline unattended setup verified - stopping VM")
-            vmTask.cancel()
             try? await vm.stop()
+            await waitForVMTask(vmTask)
             Logger.info("VM stopped", metadata: ["name": vm.name])
         } catch {
             Logger.error("Offline unattended setup verification failed", metadata: [
                 "error": error.localizedDescription
             ])
-            vmTask.cancel()
             try? await vm.stop()
+            await waitForVMTask(vmTask)
             Logger.info("VM stopped after failure", metadata: ["name": vm.name])
             throw error
+        }
+    }
+
+    /// Wait for VM.run to finish its lifecycle cleanup before callers inspect,
+    /// patch, or delete the VM's disk. stop() powers the guest off; awaiting the
+    /// task releases the Virtualization.framework objects that still own it.
+    func waitForVMTask(_ task: Task<Void, Error>) async {
+        if case .failure(let error) = await task.result,
+           !(error is CancellationError)
+        {
+            Logger.debug("VM lifecycle task ended with an error during shutdown", metadata: [
+                "error": error.localizedDescription
+            ])
         }
     }
 
