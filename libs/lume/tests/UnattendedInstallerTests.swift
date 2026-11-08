@@ -14,6 +14,20 @@ func guestFinalizationRefreshesPreboot() {
 }
 
 @MainActor
+@Test("offline setup waits for the VM lifecycle to release its resources")
+func offlineSetupWaitsForVMLifecycleCleanup() async {
+    var lifecycleFinished = false
+    let task = Task {
+        try await Task.sleep(for: .milliseconds(30))
+        lifecycleFinished = true
+    }
+
+    await UnattendedInstaller().waitForVMTask(task)
+
+    #expect(lifecycleFinished)
+}
+
+@MainActor
 @Test("offline setup grants its admin SSH access")
 func offlineSetupAddsAdminToSSHAccessGroup() throws {
     let root = FileManager.default.temporaryDirectory
