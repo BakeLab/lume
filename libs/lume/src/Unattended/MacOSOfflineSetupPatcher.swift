@@ -125,7 +125,7 @@ final class MacOSOfflineSetupPatcher {
         try configurePowerAndLockSettings(mountPoint: mountPoint)
     }
 
-    private struct GuestUser {
+    struct GuestUser {
         let username: String
         let realName: String
         let password: String
@@ -190,9 +190,10 @@ final class MacOSOfflineSetupPatcher {
         }
     }
 
-    private func addUserToGroups(_ user: GuestUser, uuid: String, mountPoint: URL) throws {
+    func addUserToGroups(_ user: GuestUser, uuid: String, mountPoint: URL) throws {
         let groupsDir = mountPoint.appendingPath("private/var/db/dslocal/nodes/Default/groups")
-        for groupName in ["admin", "staff"] {
+        // Remote Login can restrict SSH to members of this access group.
+        for groupName in ["admin", "staff", "com.apple.access_ssh"] {
             let groupPlist = groupsDir.appendingPathComponent("\(groupName).plist")
             guard fileManager.fileExists(atPath: groupPlist.path) else { continue }
 
