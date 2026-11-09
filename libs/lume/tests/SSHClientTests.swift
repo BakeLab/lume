@@ -25,7 +25,7 @@ func clientTeardownIsSafeOnEventLoop() async throws {
 @Test("SSH command falls back to system SSH after a NIO connection failure")
 func sshCommandFallsBackOnConnectionFailure() async throws {
     let fallbackCalled = NIOLockedValueBox(false)
-    let expected = SSHResult(exitCode: 0, output: "health_check_ok")
+    let expected = SSHResult(exitCode: 0, output: "command_ok")
 
     let result = try await SSHClient.executeWithFallback(
         primary: { throw SSHError.connectionFailed("operation not permitted") },

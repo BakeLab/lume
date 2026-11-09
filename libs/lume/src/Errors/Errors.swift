@@ -326,7 +326,7 @@ enum UnattendedError: Error, LocalizedError {
     case inputSimulationFailed(String)
     case commandExecutionFailed(String)
     case timeout(String)
-    case healthCheckFailed(String)
+    case vmIPAddressUnavailable(String)
 
     var errorDescription: String? {
         switch self {
@@ -346,8 +346,8 @@ enum UnattendedError: Error, LocalizedError {
             return "Failed to execute boot command: \(command)"
         case .timeout(let operation):
             return "Timeout during unattended operation: \(operation)"
-        case .healthCheckFailed(let reason):
-            return "Health check failed: \(reason)"
+        case .vmIPAddressUnavailable(let reason):
+            return "Could not determine VM IP address: \(reason)"
         }
     }
 }

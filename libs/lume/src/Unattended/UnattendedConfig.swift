@@ -1,45 +1,6 @@
 import Foundation
 import Yams
 
-/// Health check configuration for verifying unattended setup success
-struct HealthCheck: Codable, Sendable {
-    /// Type of health check: "ssh", "http", etc.
-    let type: String
-
-    /// Username for SSH health check
-    let user: String?
-
-    /// Password for SSH health check
-    let password: String?
-
-    /// Timeout in seconds for the health check (default: 30)
-    let timeout: Int?
-
-    /// Number of retries before failing (default: 3)
-    let retries: Int?
-
-    /// Delay between retries in seconds (default: 5)
-    let retryDelay: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case user
-        case password
-        case timeout
-        case retries
-        case retryDelay = "retry_delay"
-    }
-
-    init(type: String, user: String? = nil, password: String? = nil, timeout: Int? = nil, retries: Int? = nil, retryDelay: Int? = nil) {
-        self.type = type
-        self.user = user
-        self.password = password
-        self.timeout = timeout
-        self.retries = retries
-        self.retryDelay = retryDelay
-    }
-}
-
 /// Configuration for unattended macOS installation
 struct UnattendedConfig: Codable, Sendable {
     /// Seconds to wait before starting automation after VM boots
@@ -48,24 +9,19 @@ struct UnattendedConfig: Codable, Sendable {
     /// Compatibility boot commands. Offline setup ignores these.
     let bootCommands: [String]
 
-    /// Optional health check to verify setup success
-    let healthCheck: HealthCheck?
-
-    /// Optional commands to run via SSH after health check passes
+    /// Optional commands to run via SSH after offline setup.
     /// These are more reliable than typing in Terminal via VNC
     let postSshCommands: [String]?
 
     enum CodingKeys: String, CodingKey {
         case bootWait = "boot_wait"
         case bootCommands = "boot_commands"
-        case healthCheck = "health_check"
         case postSshCommands = "post_ssh_commands"
     }
 
-    init(bootWait: Int = 60, bootCommands: [String], healthCheck: HealthCheck? = nil, postSshCommands: [String]? = nil) {
+    init(bootWait: Int = 60, bootCommands: [String], postSshCommands: [String]? = nil) {
         self.bootWait = bootWait
         self.bootCommands = bootCommands
-        self.healthCheck = healthCheck
         self.postSshCommands = postSshCommands
     }
 
