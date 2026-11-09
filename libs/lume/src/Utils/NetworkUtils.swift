@@ -49,46 +49,31 @@ enum NetworkUtils {
         return runWithTimeout(process, timeout: 3)
     }
 
-    /// Checks if a TCP port is open on an IP address: a non-blocking
-    /// connect, waited on for at most `timeout`. No process is spawned, so a
-    /// guest that does not answer yet costs `timeout`, not seconds of `nc`
-    /// (callers run on the main actor, which `lume serve` shares with every
-    /// request and with VM start and restore).
+    /// Checks if a TCP port is open on an IP address with the system-signed
+    /// `/usr/bin/nc`. macOS Local Network privacy blocks connections to vmnet
+    /// guests from unapproved (e.g. ad-hoc signed) binaries, so an in-process
+    /// connect reports a reachable guest as closed.
     /// - Parameters:
     ///   - ipAddress: The IPv4 address to check
     ///   - port: The port number to check
     ///   - timeout: Timeout in seconds (default: 2)
     /// - Returns: true if the port accepted the connection, false otherwise
     static func isPortOpen(ipAddress: String, port: UInt16, timeout: TimeInterval = 2) -> Bool {
-        var addr = sockaddr_in()
-        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = port.bigEndian
-        guard inet_pton(AF_INET, ipAddress, &addr.sin_addr) == 1 else { return false }
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
-        let rc = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        if rc == 0 { return true }
-        guard errno == EINPROGRESS else { return false }
-        var pfd = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
-        guard poll(&pfd, 1, Int32(max(timeout, 0) * 1000)) == 1 else { return false }
-        var err: Int32 = 0
-        var len = socklen_t(MemoryLayout<Int32>.size)
-        guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0 else { return false }
-        return err == 0
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/nc")
+        // nc's connect timeout has whole-second granularity.
+        let seconds = max(1, Int(timeout.rounded(.up)))
+        process.arguments = ["-z", "-G", "\(seconds)", ipAddress, "\(port)"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        return runWithTimeout(process, timeout: TimeInterval(seconds) + 1)
     }
 
     /// Checks if SSH (port 22) is available on an IP address
     /// - Parameter ipAddress: The IP address to check
     /// - Returns: true if SSH port is open, false otherwise
     static func isSSHAvailable(ipAddress: String) -> Bool {
-        return isPortOpen(ipAddress: ipAddress, port: 22, timeout: 0.3)
+        return isPortOpen(ipAddress: ipAddress, port: 22, timeout: 1)
     }
 
     /// Checks if a local port has a process listening on it
