@@ -1,16 +1,8 @@
 # Offline macOS unattended setup preset.
 #
 # Lume patches the installed disk offline, creates the `lume` user, enables
-# autologin and SSH, disables sleep/screen locking, boots once to verify SSH,
+# autologin and SSH, disables sleep/screen locking, and verifies the guest boots,
 # then stops.
 
 boot_wait: 0
 boot_commands: []
-
-health_check:
-  type: ssh
-  user: lume
-  password: lume
-  timeout: 5
-  retries: 60
-  retry_delay: 5

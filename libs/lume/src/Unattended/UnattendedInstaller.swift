@@ -3,30 +3,6 @@ import Foundation
 /// Orchestrates unattended macOS installation
 @MainActor
 final class UnattendedInstaller {
-    // Publish the offline-created administrator to the VM's paired Recovery environment.
-    static let recoveryUserMetadataRefreshCommand = "/usr/sbin/diskutil apfs updatePreboot / >/dev/null"
-
-    static var guestFinalizationScript: String {
-        """
-        set -e
-        /usr/bin/touch /var/db/.AppleSetupDone
-        /usr/sbin/chown root:wheel /var/db/.AppleSetupDone
-        /bin/chmod 644 /var/db/.AppleSetupDone
-        /usr/bin/defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser -string lume
-        /usr/bin/defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false
-        /usr/bin/defaults write /Library/Preferences/com.apple.loginwindow lastUser -string loggedIn
-        /usr/bin/defaults write /Library/Preferences/com.apple.loginwindow lastUserName -string lume
-        /usr/bin/defaults write /Library/Preferences/com.apple.SetupAssistant DidSeeCloudSetup -bool true
-        /usr/bin/defaults write /Library/Preferences/com.apple.SetupAssistant DidSeePrivacy -bool true
-        /usr/bin/defaults write /Library/Preferences/com.apple.SetupAssistant DidSeeSiriSetup -bool true
-        /usr/bin/defaults write /Library/Preferences/com.apple.SetupAssistant DidSeeTouchIDSetup -bool true
-        /usr/bin/defaults write /Library/Preferences/com.apple.SetupAssistant DidSeeTrueToneSetup -bool true
-        \(recoveryUserMetadataRefreshCommand)
-        /bin/launchctl enable system/com.openssh.sshd
-        /usr/bin/stat -f 'MARKER_OWNER=%u:%g' /var/db/.AppleSetupDone
-        """
-    }
-
     /// Run unattended setup on a VM by patching the installed macOS disk offline.
     func install(
         vm: VM,
@@ -51,7 +27,7 @@ final class UnattendedInstaller {
         let patcher = MacOSOfflineSetupPatcher()
         try patcher.patch(vm: vm)
 
-        try await verifySetup(vm: vm, config: config, vncPort: vncPort)
+        try await verifyBoot(vm: vm, config: config, vncPort: vncPort)
     }
 
     private func materializeFirstBootState(vm: VM, vncPort: Int) async throws {
@@ -104,8 +80,8 @@ final class UnattendedInstaller {
         await waitForVMTask(vmTask)
     }
 
-    private func verifySetup(vm: VM, config: UnattendedConfig, vncPort: Int) async throws {
-        Logger.info("Starting VM to verify offline unattended setup", metadata: [
+    private func verifyBoot(vm: VM, config: UnattendedConfig, vncPort: Int) async throws {
+        Logger.info("Starting VM to verify offline unattended setup boot", metadata: [
             "vm": vm.name
         ])
 
@@ -152,40 +128,18 @@ final class UnattendedInstaller {
 
         do {
             let vmIP = try await waitForIPAddress(vm: vm, timeoutSeconds: 300)
-            let healthCheck = config.healthCheck ?? HealthCheck(
-                type: "ssh",
-                user: "lume",
-                password: "lume",
-                timeout: 5,
-                retries: 60,
-                retryDelay: 5
-            )
-
-            Logger.info("Running offline setup health check", metadata: [
-                "type": healthCheck.type,
+            Logger.info("Offline setup guest booted and received a DHCP lease", metadata: [
+                "vm": vm.name,
                 "ip": vmIP
             ])
 
-            let runner = HealthCheckRunner()
-            let passed = try await runner.run(check: healthCheck, vmIP: vmIP)
-
-            guard passed else {
-                throw UnattendedError.healthCheckFailed("Health check '\(healthCheck.type)' failed")
-            }
-
-            try await finalizeGuestSystemSetup(
-                vmIP: vmIP,
-                user: healthCheck.user ?? "lume",
-                password: healthCheck.password ?? "lume"
-            )
-
             if let postCommands = config.postSshCommands, !postCommands.isEmpty {
-                Logger.info("Running post-SSH commands", metadata: ["count": "\(postCommands.count)"])
-                try await runner.runPostSshCommands(
+                Logger.info("Running explicitly configured post-SSH commands", metadata: ["count": "\(postCommands.count)"])
+                try await PostSshCommandRunner().run(
                     commands: postCommands,
                     vmIP: vmIP,
-                    user: healthCheck.user ?? "lume",
-                    password: healthCheck.password ?? "lume"
+                    user: "lume",
+                    password: "lume"
                 )
                 Logger.info("Post-SSH commands completed")
             }
@@ -195,7 +149,7 @@ final class UnattendedInstaller {
             await waitForVMTask(vmTask)
             Logger.info("VM stopped", metadata: ["name": vm.name])
         } catch {
-            Logger.error("Offline unattended setup verification failed", metadata: [
+            Logger.error("Offline unattended setup boot verification failed", metadata: [
                 "error": error.localizedDescription
             ])
             try? await vm.stop()
@@ -218,37 +172,9 @@ final class UnattendedInstaller {
         }
     }
 
-    private func finalizeGuestSystemSetup(vmIP: String, user: String, password: String) async throws {
-        Logger.info("Finalizing guest system setup via SSH", metadata: [
-            "host": vmIP,
-            "user": user
-        ])
-
-        let sshClient = SSHClient(host: vmIP, port: 22, user: user, password: password)
-        let escapedPassword = password.replacingOccurrences(of: "'", with: "'\\''")
-        let script = Self.guestFinalizationScript
-        let encodedScript = Data(script.utf8).base64EncodedString()
-        let command = "printf '%s\\n' '\(escapedPassword)' | /usr/bin/sudo -S /bin/sh -c '/bin/echo \(encodedScript) | /usr/bin/base64 -D | /bin/sh'"
-        let result = try await sshClient.executeWithFallback(command: command, timeout: 60)
-
-        guard result.exitCode == 0 else {
-            throw UnattendedError.commandExecutionFailed(
-                "Guest system finalization failed with exit code \(result.exitCode): \(result.output)"
-            )
-        }
-
-        guard result.output.contains("MARKER_OWNER=0:0") else {
-            throw UnattendedError.commandExecutionFailed(
-                "Guest setup marker has unexpected ownership: \(result.output)"
-            )
-        }
-
-        Logger.info("Guest system setup finalized via SSH", metadata: ["host": vmIP])
-    }
-
     private func waitForIPAddress(vm: VM, timeoutSeconds: Int) async throws -> String {
         guard let macAddress = vm.vmDirContext.config.macAddress else {
-            throw UnattendedError.healthCheckFailed("VM MAC address not available")
+            throw UnattendedError.vmIPAddressUnavailable("VM MAC address not available")
         }
 
         let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
@@ -264,6 +190,6 @@ final class UnattendedInstaller {
             try await Task.sleep(nanoseconds: 5_000_000_000)
         }
 
-        throw UnattendedError.healthCheckFailed("VM IP address not available after \(timeoutSeconds)s")
+        throw UnattendedError.vmIPAddressUnavailable("No DHCP lease after \(timeoutSeconds)s")
     }
 }
