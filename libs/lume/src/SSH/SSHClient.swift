@@ -197,11 +197,18 @@ public actor SSHClient {
         }
     }
 
-    /// Connect to the SSH server and return the channel
+    /// Connect to the SSH server and return the channel.
+    ///
+    /// The TCP connection is made by Apple's system-signed `/usr/bin/nc`, and
+    /// SSH runs over its stdin/stdout. macOS Local Network privacy blocks
+    /// in-process connections from ad-hoc signed builds to vmnet guests.
     private func connect() async throws -> Channel {
         let user = self.user
         let password = self.password
-        let bootstrap = ClientBootstrap(group: Self.sharedEventLoopGroup)
+        let (pid, inputFD, outputFD) = try Self.spawnNetcat(
+            host: host, port: port, connectTimeout: max(1, Int(connectTimeout.rounded(.up))))
+
+        let bootstrap = NIOPipeBootstrap(group: Self.sharedEventLoopGroup)
             .channelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     let sshHandler = NIOSSHHandler(
@@ -221,14 +228,68 @@ public actor SSHClient {
                     try channel.pipeline.syncOperations.addHandler(SSHErrorHandler())
                 }
             }
-            .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
-            .channelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_NODELAY), value: 1)
-            .connectTimeout(.seconds(max(1, Int64(connectTimeout.rounded(.up)))))
 
+        let channel: Channel
         do {
-            return try await bootstrap.connect(host: host, port: port).get()
+            channel = try await bootstrap.takingOwnershipOfDescriptors(input: inputFD, output: outputFD).get()
         } catch {
+            close(inputFD)
+            close(outputFD)
+            Self.reap(pid)
             throw SSHError.connectionFailed(error.localizedDescription)
+        }
+        channel.closeFuture.whenComplete { _ in Self.reap(pid) }
+        return channel
+    }
+
+    /// Spawns `/usr/bin/nc` and returns its pid plus the parent's read and
+    /// write descriptors for the child's stdout and stdin.
+    static func spawnNetcat(host: String, port: Int, connectTimeout: Int) throws -> (pid_t, Int32, Int32) {
+        var toChild: [Int32] = [-1, -1]
+        var fromChild: [Int32] = [-1, -1]
+        guard pipe(&toChild) == 0 else {
+            throw SSHError.connectionFailed("pipe failed: \(String(cString: strerror(errno)))")
+        }
+        guard pipe(&fromChild) == 0 else {
+            let message = String(cString: strerror(errno))
+            close(toChild[0])
+            close(toChild[1])
+            throw SSHError.connectionFailed("pipe failed: \(message)")
+        }
+
+        var actions: posix_spawn_file_actions_t?
+        posix_spawn_file_actions_init(&actions)
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        posix_spawn_file_actions_adddup2(&actions, toChild[0], STDIN_FILENO)
+        posix_spawn_file_actions_adddup2(&actions, fromChild[1], STDOUT_FILENO)
+        posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0)
+
+        var attributes: posix_spawnattr_t?
+        posix_spawnattr_init(&attributes)
+        defer { posix_spawnattr_destroy(&attributes) }
+        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_CLOEXEC_DEFAULT))
+
+        let arguments = ["/usr/bin/nc", "-G", String(connectTimeout), host, String(port)]
+        var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
+        defer { argv.forEach { free($0) } }
+
+        var pid: pid_t = 0
+        let status = posix_spawn(&pid, "/usr/bin/nc", &actions, &attributes, &argv, environ)
+        close(toChild[0])
+        close(fromChild[1])
+        guard status == 0 else {
+            close(toChild[1])
+            close(fromChild[0])
+            throw SSHError.connectionFailed("failed to launch /usr/bin/nc: \(String(cString: strerror(status)))")
+        }
+        return (pid, fromChild[0], toChild[1])
+    }
+
+    private static func reap(_ pid: pid_t) {
+        DispatchQueue.global().async {
+            kill(pid, SIGTERM)
+            var status: Int32 = 0
+            while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
         }
     }
 }
