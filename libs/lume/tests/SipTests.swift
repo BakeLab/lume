@@ -113,6 +113,12 @@ func sipRecoveryAutomation() async throws {
     }
 }
 
+@Test("Preboot refresh feeds the shell-quoted password to sudo") func sipPrebootRefreshCommand() {
+    #expect(
+        Sip.prebootRefreshCommand(password: "it's")
+            == "printf '%s\\n' 'it'\\''s' | /usr/bin/sudo -S -k -p '' /usr/sbin/diskutil apfs updatePreboot / >/dev/null")
+}
+
 @MainActor @Test("sensitive VNC input is sent on stdin and never in argv") func vncSensitiveInputUsesStdin() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "lume-sip-vnc-test-\(UUID().uuidString)")

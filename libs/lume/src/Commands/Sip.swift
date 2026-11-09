@@ -114,6 +114,21 @@ struct Sip: AsyncParsableCommand {
                     "SSH authentication failed for '\(adminUser)': \(error.localizedDescription)")
             }
 
+            // Offline-provisioned admins get their SecureToken at first login, but
+            // their APFS crypto user stays untyped until Preboot is refreshed, and
+            // Recovery then reports "no admin users authorized for recovery".
+            do {
+                let result = try await ssh.executeWithFallback(
+                    command: Self.prebootRefreshCommand(password: password),
+                    timeout: try deadline.remaining(upTo: 180, operation: "Preboot refresh"))
+                guard result.exitCode == 0 else {
+                    throw SipError.credentialPreflightFailed(
+                        "diskutil apfs updatePreboot exited with status \(result.exitCode)")
+                }
+            } catch let error as SipError { throw error } catch {
+                throw SipError.credentialPreflightFailed("Preboot refresh failed: \(error.localizedDescription)")
+            }
+
             Logger.info("Admin credential preflight passed", metadata: ["vm": name])
             try await stopNormalBoot(
                 child: child, controller: controller, deadline: deadline, operation: "credential preflight")
@@ -385,6 +400,12 @@ struct Sip: AsyncParsableCommand {
         return String((0..<8).map { _ in
             characters[Int.random(in: characters.indices, using: &generator)]
         })
+    }
+
+    /// Refreshes Preboot so Recovery recognizes the admin as an authorized user.
+    static func prebootRefreshCommand(password: String) -> String {
+        let quoted = "'" + password.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        return "printf '%s\\n' \(quoted) | /usr/bin/sudo -S -k -p '' /usr/sbin/diskutil apfs updatePreboot / >/dev/null"
     }
 
     static func statusMatches(_ output: String, expected state: State) -> Bool {
