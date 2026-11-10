@@ -13,16 +13,41 @@ struct UnattendedConfig: Codable, Sendable {
     /// These are more reliable than typing in Terminal via VNC
     let postSshCommands: [String]?
 
+    /// Account created by offline setup. Defaults to `lume` for compatibility.
+    let guestUser: String
+
     enum CodingKeys: String, CodingKey {
         case bootWait = "boot_wait"
         case bootCommands = "boot_commands"
         case postSshCommands = "post_ssh_commands"
+        case guestUser = "guest_user"
     }
 
-    init(bootWait: Int = 60, bootCommands: [String], postSshCommands: [String]? = nil) {
+    init(
+        bootWait: Int = 60,
+        bootCommands: [String],
+        postSshCommands: [String]? = nil,
+        guestUser: String = "lume"
+    ) {
         self.bootWait = bootWait
         self.bootCommands = bootCommands
         self.postSshCommands = postSshCommands
+        self.guestUser = guestUser
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        bootWait = try values.decodeIfPresent(Int.self, forKey: .bootWait) ?? 60
+        bootCommands = try values.decodeIfPresent([String].self, forKey: .bootCommands) ?? []
+        postSshCommands = try values.decodeIfPresent([String].self, forKey: .postSshCommands)
+        guestUser = try values.decodeIfPresent(String.self, forKey: .guestUser) ?? "lume"
+        guard guestUser.range(of: #"^[a-zA-Z][a-zA-Z0-9_-]*$"#, options: .regularExpression) != nil else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .guestUser,
+                in: values,
+                debugDescription: "guest_user must be a valid local account name"
+            )
+        }
     }
 
     /// Load configuration from a YAML file path or preset name

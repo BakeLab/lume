@@ -20,7 +20,7 @@ final class MacOSOfflineSetupPatcher {
         self.fileManager = fileManager
     }
 
-    func patch(vm: VM) throws {
+    func patch(vm: VM, guestUser: String = "lume") throws {
         let diskPath = vm.vmDirContext.diskPath.path
         try ensureStopped(vm: vm)
 
@@ -34,7 +34,7 @@ final class MacOSOfflineSetupPatcher {
             cleanup(mount: mount)
         }
 
-        try patchMountedDataVolume(at: mount.mountPoint)
+        try patchMountedDataVolume(at: mount.mountPoint, guestUser: guestUser)
 
         Logger.info("Offline macOS unattended setup completed", metadata: [
             "name": vm.name,
@@ -110,8 +110,14 @@ final class MacOSOfflineSetupPatcher {
 
     // MARK: - Guest Patching
 
-    private func patchMountedDataVolume(at mountPoint: URL) throws {
-        let user = GuestUser(username: "lume", realName: "lume", password: "lume", uid: "501", gid: "20")
+    private func patchMountedDataVolume(at mountPoint: URL, guestUser: String) throws {
+        let user = GuestUser(
+            username: guestUser,
+            realName: guestUser,
+            password: "lume",
+            uid: "501",
+            gid: "20"
+        )
 
         try ensureDirectoryExecutable(mountPoint.appendingPath("private/var/db/dslocal/nodes/Default"))
         try ensureDirectoryExecutable(mountPoint.appendingPath("private/var/db/dslocal/nodes/Default/users"))
