@@ -441,6 +441,10 @@ public final class SystemSSHClient: Sendable {
     ) -> [String] {
         var args = [
             "-q",
+            // Remote paths are shell-quoted by remoteScpEndpoint. OpenSSH's
+            // default SFTP mode treats those quotes as literal filename bytes;
+            // legacy SCP lets the remote shell interpret them as intended.
+            "-O",
             "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
             "-o", "LogLevel=ERROR",
