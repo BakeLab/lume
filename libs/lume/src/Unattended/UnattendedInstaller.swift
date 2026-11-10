@@ -25,7 +25,7 @@ final class UnattendedInstaller {
         try await materializeFirstBootState(vm: vm, vncPort: vncPort)
 
         let patcher = MacOSOfflineSetupPatcher()
-        try patcher.patch(vm: vm)
+        try patcher.patch(vm: vm, guestUser: config.guestUser)
 
         try await verifyBoot(vm: vm, config: config, vncPort: vncPort)
     }
@@ -138,7 +138,7 @@ final class UnattendedInstaller {
                 try await PostSshCommandRunner().run(
                     commands: postCommands,
                     vmIP: vmIP,
-                    user: "lume",
+                    user: config.guestUser,
                     password: "lume"
                 )
                 Logger.info("Post-SSH commands completed")

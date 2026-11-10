@@ -15,6 +15,17 @@ func legacyUnattendedSSHHealthCheckIsIgnored() throws {
 
     #expect(config.bootCommands.isEmpty)
     #expect(config.postSshCommands == nil)
+    #expect(config.guestUser == "lume")
+}
+
+@Test("unattended setup accepts an explicit guest account")
+func unattendedGuestUserConfiguration() throws {
+    let config = try UnattendedConfig.parse(yaml: """
+        boot_commands: []
+        guest_user: breadboard
+        """)
+
+    #expect(config.guestUser == "breadboard")
 }
 
 @MainActor
