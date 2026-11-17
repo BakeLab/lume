@@ -164,14 +164,6 @@ jobs:
             input_artifact: cua-perception-input-linux-x86_64
             worker: cua-perception
             driver: cua-driver
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            platform: windows
-            input_artifact: cua-perception-input-windows-x86_64
-            worker: cua-perception.exe
-            driver: cua-driver.exe
-          # Match the production Driver build and hosted desktop E2E image.
-          # The macOS 15 image cannot use the ephemeral self-signed review key.
           - runner: macos-26
             target: aarch64-apple-darwin
             platform: macos
@@ -739,8 +731,7 @@ jobs:
           python3 - <<'PY'
           import hashlib, json, os, pathlib
           root = pathlib.Path("staged")
-          for platform, target in (("windows", "x86_64-pc-windows-msvc"),
-                                   ("linux-x11", "x86_64-unknown-linux-gnu"),
+          for platform, target in (("linux-x11", "x86_64-unknown-linux-gnu"),
                                    ("macos", "aarch64-apple-darwin")):
               directory = root / platform
               catalog_path = directory / "signed-catalog.json"
@@ -786,7 +777,7 @@ jobs:
           node <<'JS'
           const crypto = require("node:crypto");
           const fs = require("node:fs");
-          for (const platform of ["windows", "linux-x11", "macos"]) {
+          for (const platform of ["linux-x11", "macos"]) {
             const root = `staged/${platform}`;
             const catalog = JSON.parse(fs.readFileSync(`${root}/signed-catalog.json`));
             const metadata = JSON.parse(fs.readFileSync(`${root}/review-measurements.json`));

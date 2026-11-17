@@ -65,10 +65,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: Windows
-            os: windows-latest
-            artifact: rust-browser-windows
-            products: chrome,edge
           - label: Linux X11
             os: ubuntu-latest
             artifact: rust-browser-linux-x11
@@ -96,10 +92,6 @@ jobs:
       - uses: ./.github/actions/rust-cache
         with:
           workspaces: libs/cua-driver/rust
-      - name: Install Windows video tools
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: .\scripts\ci\windows\setup-ffmpeg.ps1
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
         shell: bash
@@ -122,41 +114,6 @@ jobs:
           # disposable hosted image to that same production trust contract.
           sudo chown root:root /opt /opt/google /opt/google/chrome "$chrome_payload"
           sudo chmod go-w /opt /opt/google /opt/google/chrome "$chrome_payload"
-      - name: Build source driver on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: cargo build --release -p cua-driver --manifest-path libs/cua-driver/rust/Cargo.toml
-      - name: Verify Windows browser trees for isolated launch
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $browserInstallations = @(
-            @{ Root = (Join-Path ${env:ProgramFiles} 'Google\Chrome'); Executable = (Join-Path ${env:ProgramFiles} 'Google\Chrome\Application\chrome.exe') },
-            @{ Root = (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge'); Executable = (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe') }
-          )
-          foreach ($browser in $browserInstallations) {
-            if (-not (Test-Path -LiteralPath $browser.Executable -PathType Leaf)) {
-              throw "required vendor browser executable is absent: $($browser.Executable)"
-            }
-            $signature = Get-AuthenticodeSignature -FilePath $browser.Executable
-            if ($signature.Status -ne 'Valid') {
-              throw "vendor browser signature is not valid: $($browser.Executable) ($($signature.Status))"
-            }
-            Write-Host "[browser-trust] verified vendor-signed candidate: $($browser.Executable)"
-          }
-      - name: Run standalone browsers on Windows from an elevated Driver
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $artifactDir = Join-Path $PWD 'artifacts\cua-driver\standalone-browser'
-          $scriptPath = Join-Path $PWD 'scripts\ci\windows\run-rust-standalone-browser-e2e.ps1'
-          # The elevated Driver launches isolated browsers with a derived
-          # standard-user token; the suite verifies that token independently.
-          $env:CUA_E2E_ARTIFACT_DIR = $artifactDir
-          & $scriptPath -NoBuild
-          if ($LASTEXITCODE -ne 0) { throw "standalone-browser E2E failed with exit code $LASTEXITCODE" }
       - name: Build source driver on Linux
         if: runner.os == 'Linux'
         shell: bash

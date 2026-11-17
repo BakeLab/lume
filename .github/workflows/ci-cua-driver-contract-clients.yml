@@ -231,14 +231,6 @@ jobs:
         with:
           workspaces: "libs/cua-driver/rust -> target"
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Record Windows runner session
-        if: runner.os == 'Windows'
-        id: windows-session
-        shell: pwsh
-        run: |
-          $sessionId = (Get-Process -Id $PID).SessionId
-          "session_id=$sessionId" >> $env:GITHUB_OUTPUT
-          "Windows runner process session id: $sessionId"
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -250,14 +242,12 @@ jobs:
             clang pkg-config libdbus-1-dev libpipewire-0.3-dev libspa-0.2-dev \
             libei-dev libxkbcommon-dev libx11-dev libxi-dev libxtst-dev libxext-dev
       - name: Prove portable contracts match the live registry
-        if: runner.os != 'Windows' || steps.windows-session.outputs.session_id != '0'
         working-directory: libs/cua-driver/rust
         env:
           CUA_TEST_REQUIRE_DRIVER_BIN: "1"
         run: cargo test --locked -p cua-driver --test schema_consistency_test portable_desktop_contracts_are_accepted_by_active_backend
 
       - name: Verify released CLI and MCP compatibility
-        if: runner.os != 'Windows' || steps.windows-session.outputs.session_id != '0'
         working-directory: libs/cua-driver/rust
         env:
           CUA_TEST_REQUIRE_DRIVER_BIN: "1"
@@ -275,26 +265,8 @@ jobs:
         run: cargo run --manifest-path libs/cua-driver/compat-fixtures/apps/rust/Cargo.toml
 
       - name: Prove the embedded host serves SDK and MCP clients
-        if: runner.os != 'Windows' || steps.windows-session.outputs.session_id != '0'
         working-directory: libs/cua-driver/rust
         run: cargo test --locked -p cua-driver --test embedded_host_sdk_mcp_test
-
-      - name: Prove Windows Session 0 refusal and desktop-free metadata
-        if: runner.os == 'Windows' && steps.windows-session.outputs.session_id == '0'
-        working-directory: libs/cua-driver/rust
-        shell: pwsh
-        run: |
-          cargo test --locked -p platform-windows diagnostics::tests:: --lib
-          if ($LASTEXITCODE -ne 0) { throw "Windows diagnostics tests failed with exit $LASTEXITCODE" }
-          cargo test --locked -p cua-driver-sdk session_zero_refuses_runtime_creation_before_platform_dispatch --lib | Tee-Object -Variable sessionZeroLog
-          if ($LASTEXITCODE -ne 0) { throw "Session 0 refusal test failed with exit $LASTEXITCODE" }
-          if (-not ($sessionZeroLog -match 'test result: ok\. 1 passed')) { throw "Session 0 refusal filter matched no test" }
-          cargo run --locked -p cua-driver -- list-tools | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "Session 0 list-tools failed with exit $LASTEXITCODE" }
-          cargo run --locked -p cua-driver -- describe click | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "Session 0 describe failed with exit $LASTEXITCODE" }
-          cargo run --locked -p cua-driver -- dump-docs --type cli | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "Session 0 dump-docs failed with exit $LASTEXITCODE" }
 
   verify:
     name: Generated contract and SDK bindings

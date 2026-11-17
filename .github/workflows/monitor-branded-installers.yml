@@ -135,7 +135,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-26, windows-latest]
+        os: ["ubuntu-latest", "macos-26"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -215,48 +215,6 @@ jobs:
             grep -Fqx "source=Notarized Developer ID" <<< "$ASSESSMENT"
             grep -Eq '^origin=Developer ID Application: .+ \(YCK386LBJ7\)$' <<< "$ASSESSMENT"
           fi
-
-      - name: Run the canonical Windows installer with default resolution
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $canary = Join-Path $env:RUNNER_TEMP "cua-driver-canary"
-          Remove-Item -LiteralPath $canary -Recurse -Force -ErrorAction SilentlyContinue
-          $env:CUA_DRIVER_RS_HOME = Join-Path $canary "home"
-          $env:CUA_DRIVER_RS_INSTALL_DIR = Join-Path $canary "bin"
-          foreach ($name in 'CUA_DRIVER_RS_VERSION', 'GH_TOKEN', 'GITHUB_TOKEN') {
-            Remove-Item "Env:$name" -ErrorAction SilentlyContinue
-          }
-          if ($env:CANARY_PIN) {
-            Write-Host "::notice::Diagnostics run pinned to $($env:CANARY_PIN); this is not default resolution."
-            $env:CUA_DRIVER_RS_VERSION = $env:CANARY_PIN
-          }
-          if ($env:INSTALLER_SOURCE -eq 'checkout') {
-            & ./libs/cua-driver/scripts/install.ps1 -NoAutoStart -NoPathUpdate
-          }
-          else {
-            & ([scriptblock]::Create((Invoke-RestMethod https://cua.ai/driver/install.ps1))) -NoAutoStart -NoPathUpdate
-          }
-          $binary = Join-Path $env:CUA_DRIVER_RS_INSTALL_DIR "cua-driver.exe"
-          if (-not (Test-Path -LiteralPath $binary)) {
-            throw "installer did not create $binary"
-          }
-          $versionOutput = & $binary --version
-          if ($LASTEXITCODE -ne 0) {
-            throw "installed binary exited with $LASTEXITCODE"
-          }
-          Write-Host "Installed: $versionOutput"
-          $published = (Get-Content -Raw .github/release-state/cua-driver-rs-published-version).Trim()
-          if ($env:CANARY_PIN) { $published = $env:CANARY_PIN }
-          if ($versionOutput -notmatch [regex]::Escape($published)) {
-            Write-Host "::warning::Installed '$versionOutput', but main publishes $published (the branded endpoint may still be propagating)."
-          }
-          $signature = Get-AuthenticodeSignature -LiteralPath $binary
-          $signature | Format-List Status, StatusMessage, SignerCertificate
-          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN="?Cua AI, Inc\.') {
-            throw "installed cua-driver.exe is not validly signed by Cua AI, Inc.: $($signature.StatusMessage)"
-          }
 
   report:
     name: Report installer canary failures

@@ -177,21 +177,6 @@ jobs:
       lane: ${{ needs.decide.outputs.lanes == 'quick' && 'shared' || 'all' }}
       harness_filter: ${{ needs.decide.outputs.lanes == 'quick' && 'electron' || '' }}
 
-  windows:
-    name: "gate / Windows E2E"
-    needs: decide
-    if: ${{ !failure() && !cancelled() && needs.decide.outputs.run == 'true' }}
-    permissions:
-      actions: read
-      contents: read
-    uses: ./.github/workflows/e2e-rust-windows.yml
-    with:
-      ref: ${{ github.sha }}
-      lane: ${{ needs.decide.outputs.lanes == 'quick' && 'shared' || 'all' }}
-      harness_filter: ${{ needs.decide.outputs.lanes == 'quick' && 'electron' || '' }}
-
-  # Hosted macOS seeds TCC state, so it never runs on pull_request events
-  # (the probe rejects them). PRs use `macos-pr` below instead.
   macos:
     name: "gate / macOS hosted E2E"
     needs: decide
@@ -305,7 +290,7 @@ jobs:
   result:
     name: "E2E gate / result"
     if: always()
-    needs: [decide, linux, windows, macos, macos-pr, browsers]
+    needs: ["decide", "linux", "macos", "macos-pr", "browsers"]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -338,7 +323,7 @@ jobs:
   nightly-report:
     name: "E2E gate / nightly report"
     if: always() && (needs.decide.outputs.mode == 'nightly' || needs.decide.outputs.mode == 'post-merge')
-    needs: [decide, linux, windows, macos, macos-pr, browsers]
+    needs: ["decide", "linux", "macos", "macos-pr", "browsers"]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

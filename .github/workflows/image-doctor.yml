@@ -403,49 +403,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  windows:
-    needs: plan
-    if: needs.plan.outputs.windows == 'true'
-    # Hosted ubuntu-24.04 runners expose /dev/kvm; a 2 vCPU / 7 GB runner
-    # boots the guest with 4 GiB (cd-image-windows.yml does the same).
-    runs-on: ${{ needs.plan.outputs.windows_runner }}
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
-          df -h /
-      - name: Install QEMU, OVMF, crane and grpcurl
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends qemu-utils qemu-system-x86 ovmf
-          sudo chmod 666 /dev/kvm
-          go install github.com/google/go-containerregistry/cmd/crane@v0.20.6
-          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.9.3
-          echo "$(go env GOPATH)/bin" >>"$GITHUB_PATH"
-      - name: Build the cua CLI (doctor shim, images without cua-spacesd)
-        working-directory: libs/cua
-        run: |
-          if crane manifest "${{ inputs.windows_ref }}" | jq -e '.annotations["ai.cua.spacesd"] == "true"' >/dev/null; then
-            echo "the image runs cua-spacesd; no shim needed"; exit 0
-          fi
-          cargo build --release --locked -p cua-cli --features byoc
-      - name: Boot the Windows disk and run the doctor
-        run: |
-          cua=(); [ -x libs/cua/target/release/cua ] && cua=(--cua libs/cua/target/release/cua)
-          scripts/images/image-doctor-windows.sh --image "${{ inputs.windows_ref }}" "${cua[@]}" \
-            --mem 4G --smp "$(nproc)" --out "$RUNNER_TEMP/doctor" \
-            ${{ inputs.strict && '--strict' || '' }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: doctor-${{ inputs.name }}-amd64-windows
-          path: ${{ runner.temp }}/doctor
-          if-no-files-found: warn
-          retention-days: 30
-
   lume:
     needs: plan
     if: needs.plan.outputs.lume == 'true'
@@ -470,7 +427,7 @@ jobs:
           retention-days: 30
 
   summary:
-    needs: [plan, container, conformance, claim-token, qemu, parity, windows, lume]
+    needs: ["plan", "container", "conformance", "claim-token", "qemu", "parity", "lume"]
     if: always()
     runs-on: ubuntu-latest
     outputs:

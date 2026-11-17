@@ -56,9 +56,6 @@ jobs:
           - target_os: macos
             target_triple: aarch64-apple-darwin
             payload_artifact: ${{ inputs.macos_payload_artifact }}
-          - target_os: windows
-            target_triple: x86_64-pc-windows-msvc
-            payload_artifact: ${{ inputs.windows_payload_artifact }}
     uses: ./.github/workflows/cd-cua-perception-candidate.yml
     with:
       payload_artifact: ${{ matrix.payload_artifact }}

@@ -272,66 +272,6 @@ jobs:
   # the doctor's volume.mount round trip on a folder, then a Space's view on
   # V: (read-only public/, its own folder writable, a 3 MB file both ways,
   # rename, mkdir, and no drive left after detaching).
-  volume-windows:
-    name: Cua Volume mount (Windows NFS client)
-    # Not shipped yet (renames fail in the Windows NFS client): run on
-    # demand while the Windows mount is finished.
-    needs: quick
-    if: ${{ !failure() && !cancelled() && ((github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name == 'workflow_dispatch')) }}
-    runs-on: windows-latest
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: bash
-        working-directory: libs/cua-spacesd
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Install protoc
-        uses: ./.github/actions/setup-protoc
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: ./.github/actions/rust-cache
-        with:
-          workspaces: "libs/cua-spacesd -> target"
-      - name: Enable Client for NFS (as the image does)
-        shell: powershell
-        working-directory: .
-        run: |
-          & .\libs\images\windows-2022\enable-volume.ps1
-      - name: NFS client state before the test
-        if: always()
-        shell: powershell
-        working-directory: .
-        run: .\libs\images\windows-2022\volume-diagnostics.ps1
-      - name: Build the volume tests
-        run: |
-          cargo test -p cua-spacesd-server --lib --no-run --locked
-          cargo test -p cua-spacesd-doctor --test volume --no-run --locked
-      - name: Portmapper and drive unit tests
-        run: cargo test -p cua-spacesd-server --lib --locked services::volume
-      - name: Mount, round trip and unmount
-        run: cargo test -p cua-spacesd-doctor --test volume --locked -- --nocapture
-        env:
-          CUA_SPACESD_VOLUME_TEST: "1"
-          CUA_VOLUME_WINDOWS_PREVIEW: "1"
-          # Every NFS call the host answers, next to the driver's mount log.
-          CUA_VOLUME_TEST_LOG: "nfsserve=debug,cua_spacesd_server::services=info"
-      - name: NFS client state after the test
-        if: always()
-        shell: powershell
-        working-directory: .
-        run: .\libs\images\windows-2022\volume-diagnostics.ps1
-      - name: Nothing left mounted
-        if: always()
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Continue"
-          $left = & mount.exe 2>&1 | Select-String "127.0.0.1|localhost"
-          if ($left) { $left; throw "a Cua Volume mount is still there" }
-          "no Cua Volume mount left"
-
-  # Reverse tunnel end to end: spacesd on an internal Docker network with
-  # no published ports, reached through cua-relay (conformance suite,
-  # 1 GiB transfers, relay killed mid-stream).
   relay-e2e:
     name: relay e2e (docker)
     needs: changes

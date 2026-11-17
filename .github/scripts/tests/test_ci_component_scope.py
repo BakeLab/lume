@@ -30,12 +30,16 @@ class ScopeTests(unittest.TestCase):
         self.assertTrue(run_)
         self.assertEqual(labels, ["ubuntu-latest"])
         _, labels, _ = run("contract-clients", [D + "platform-macos/src/x.rs", D + "platform-windows/src/y.rs"])
-        self.assertEqual(labels, ["macos-latest", "windows-latest"])
+        self.assertEqual(labels, ["macos-latest"])
+
+    def test_windows_only_skips(self):
+        for lane in ("spacesd", "contract-clients"):
+            self.assertFalse(run(lane, [D + "platform-windows/src/x.rs"])[0])
 
     def test_common_driver_crate_runs_all(self):
         run_, labels, _ = run("spacesd", [D + "cua-driver-core/src/lib.rs"])
         self.assertTrue(run_)
-        self.assertEqual(len(labels), 3)
+        self.assertEqual(len(labels), 2)
 
     def test_driver_crate_outside_closure_skips_spacesd(self):
         self.assertFalse(run("spacesd", [D + "cua-driver-e2e/tests/a.rs"])[0])
@@ -49,11 +53,11 @@ class ScopeTests(unittest.TestCase):
                   "libs/cua/proto/a.proto", ".github/scripts/ci_component_scope.py"):
             run_, labels, _ = run("spacesd", [D + "platform-linux/a.rs", f])
             self.assertTrue(run_, f)
-            self.assertEqual(len(labels), 3, f)
+            self.assertEqual(len(labels), 2, f)
 
     def test_full_matrix_for_release_and_main(self):
-        self.assertEqual(len(run("spacesd", ["docs/a.md"], event="push")[1]), 3)
-        self.assertEqual(len(run("spacesd", ["docs/a.md"], ref="release-please--branches--main")[1]), 3)
+        self.assertEqual(len(run("spacesd", ["docs/a.md"], event="push")[1]), 2)
+        self.assertEqual(len(run("spacesd", ["docs/a.md"], ref="release-please--branches--main")[1]), 2)
 
     def test_unknown_listing_fails_closed(self):
         self.assertTrue(run("spacesd", [])[0])

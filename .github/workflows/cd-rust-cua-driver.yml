@@ -419,261 +419,6 @@ jobs:
   # the x86_64 windows-latest runner — Rust + MSVC have first-class support
   # for that cross, so no separate arm64 runner is needed. install.ps1 picks
   # the matching zip at install time based on the host's OS architecture.
-  build-windows:
-    name: windows-${{ matrix.arch }}
-    needs: release-attribution-preflight
-    runs-on: windows-latest
-    environment: cua-driver-release-signing
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            target: x86_64-pc-windows-msvc
-          - arch: arm64
-            target: aarch64-pc-windows-msvc
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.rebuild_sha || inputs.source_ref || github.ref }}
-      - name: Stage nightly artifact version
-        if: inputs.channel == 'nightly'
-        shell: bash
-        run: python .github/scripts/release_channels.py apply-version --component cua-driver-rs --version "${{ inputs.version }}"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: libs/cua-driver/typescript/package-lock.json
-      - name: Determine version
-        id: version
-        shell: bash
-        run: |
-          if [[ "${{ inputs.channel }}" == "nightly" ]]; then
-            VERSION="${{ inputs.version }}"
-          elif [[ "$RELEASE_REF" == refs/tags/cua-driver-rs-v* ]]; then
-            VERSION="${RELEASE_REF#refs/tags/cua-driver-rs-v}"
-          else
-            VERSION="${{ inputs.version }}"
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1
-        with:
-          targets: ${{ matrix.target }}
-      # rustup can drop non-host std components while updating an existing
-      # stable toolchain. Install the requested cross target explicitly and
-      # fail here instead of surfacing a misleading `can't find crate core`
-      # error during the release build.
-      - name: Ensure Rust target is installed
-        working-directory: libs/cua-driver/rust
-        shell: bash
-        run: |
-          rustup target add "${{ matrix.target }}"
-          rustup target list --installed | grep -Fx "${{ matrix.target }}"
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            libs/cua-driver/rust/target
-          key: rust-cua-driver-rs-windows-${{ matrix.arch }}-${{ hashFiles('libs/cua-driver/rust/Cargo.lock', 'libs/cua-driver/rust/**/Cargo.toml') }}
-          restore-keys: |
-            rust-cua-driver-rs-windows-${{ matrix.arch }}-
-      - name: Build (release)
-        working-directory: libs/cua-driver/rust
-        # Build both the main CLI/MCP binary AND the uiAccess'd worker.
-        # `cua-driver-uia.exe` is the Windows-only sibling daemon that runs
-        # at UIAccess integrity so SendInput / UI Automation can cross UIPI
-        # into UWP apps — see crates/cua-driver-uia/ and #1602.
-        run: cargo build --locked -p cua-driver -p cursor-theme-cli -p cua-driver-uia -p cua-driver-sdk --release --target ${{ matrix.target }}
-      - name: Build Electron-compatible Node runtime
-        working-directory: libs/cua-driver
-        shell: bash
-        run: |
-          npm --prefix typescript ci --ignore-scripts
-          node scripts/build-node-runtime.mjs \
-            --target "${{ matrix.target }}" \
-            --output "rust/target/${{ matrix.target }}/release/cua_driver_node_runtime.node"
-      - name: Verify Node runtime is self-contained on Windows
-        working-directory: libs/cua-driver
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installation = & $vswhere -latest -products * `
-            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-            -property installationPath
-          if (-not $installation) { throw "Visual Studio Build Tools were not found" }
-          $dumpbin = Get-ChildItem `
-            "$installation\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" |
-            Sort-Object FullName | Select-Object -Last 1 -ExpandProperty FullName
-          if (-not $dumpbin) { throw "dumpbin.exe was not found" }
-
-          $runtime = "rust/target/${{ matrix.target }}/release/cua_driver_node_runtime.node"
-          $imports = & $dumpbin /DEPENDENTS $runtime 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            throw "dumpbin failed for $runtime with exit $LASTEXITCODE"
-          }
-          $imports | Write-Host
-          $dynamicCrt = $imports | Select-String -Pattern `
-            '(?i)\b(?:VCRUNTIME|MSVCP|CONCRT|UCRTBASE|api-ms-win-crt-)[^\s]*\.dll\b'
-          if ($dynamicCrt) {
-            throw "Windows Node runtime has a dynamic VC/UCRT dependency: $($dynamicCrt -join ', ')"
-          }
-      - name: Azure login for Artifact Signing
-        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Sign Windows binaries
-        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
-        with:
-          # Install the module on every run: a cached one skipped the install and was not found (#5838).
-          cache-dependencies: 'false'
-          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
-          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          files: |
-            ${{ github.workspace }}\libs\cua-driver\rust\target\${{ matrix.target }}\release\cua-driver.exe
-            ${{ github.workspace }}\libs\cua-driver\rust\target\${{ matrix.target }}\release\cua-cursor-theme.exe
-            ${{ github.workspace }}\libs\cua-driver\rust\target\${{ matrix.target }}\release\cua-driver-uia.exe
-            ${{ github.workspace }}\libs\cua-driver\rust\target\${{ matrix.target }}\release\cua_driver_sdk.dll
-            ${{ github.workspace }}\libs\cua-driver\rust\target\${{ matrix.target }}\release\cua_driver_node_runtime.node
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-          description: Cua Driver
-          description-url: https://cua.ai
-      - name: Verify Authenticode signatures
-        working-directory: libs/cua-driver/rust
-        shell: pwsh
-        run: |
-          $target = "${{ matrix.target }}"
-          $files = @(
-            "target/$target/release/cua-driver.exe",
-            "target/$target/release/cua-cursor-theme.exe",
-            "target/$target/release/cua-driver-uia.exe",
-            "target/$target/release/cua_driver_sdk.dll",
-            "target/$target/release/cua_driver_node_runtime.node"
-          )
-          foreach ($file in $files) {
-            $signature = Get-AuthenticodeSignature -FilePath $file
-            $signature | Format-List Status, StatusMessage, Path, SignerCertificate
-            if ($signature.Status -ne 'Valid') {
-              throw "Invalid Authenticode signature for ${file}: $($signature.StatusMessage)"
-            }
-            if ($signature.SignerCertificate.Subject -notmatch 'CN="?Cua AI, Inc\."?') {
-              throw "Unexpected Authenticode signer for ${file}: $($signature.SignerCertificate.Subject)"
-            }
-          }
-      - name: Package
-        working-directory: libs/cua-driver/rust
-        shell: pwsh
-        run: |
-          $version = "${{ steps.version.outputs.version }}"
-          $label   = "windows-${{ matrix.arch }}"
-          $target  = "${{ matrix.target }}"
-          $stage   = "cua-driver-rs-${version}-${label}"
-          New-Item -ItemType Directory -Force -Path "release/$stage" | Out-Null
-          Copy-Item "target/$target/release/cua-driver.exe" "release/$stage/"
-          Copy-Item "target/$target/release/cua-cursor-theme.exe" "release/$stage/"
-          Copy-Item "target/$target/release/cua-driver-uia.exe" "release/$stage/"
-          Copy-Item "target/$target/release/cua_driver_sdk.dll" "release/$stage/"
-          Copy-Item "target/$target/release/cua_driver_node_runtime.node" "release/$stage/"
-          Copy-Item "include/cua_driver_abi.h" "release/$stage/"
-          Copy-Item "../../../LICENSE.md" "release/$stage/LICENSE" -ErrorAction Stop
-          Copy-Item "THIRD_PARTY_NOTICES.md" "release/$stage/THIRD_PARTY_NOTICES.md" -ErrorAction Stop
-          # Zip the directory itself (no trailing /*) so the archive contains
-          # the top-level "$stage" wrapper dir — install.ps1 walks into
-          # extracted/cua-driver-rs-<v>-<arch>/cua-driver.exe to find the
-          # binary. With "release/$stage/*" Compress-Archive strips the
-          # wrapper and dumps the files at the archive root, which breaks
-          # the installer's path lookup.
-          Compress-Archive -Path "release/$stage" -DestinationPath "release/$stage.zip" -Force
-          # Bare-binaries zip: all runtime binaries side-by-side (no wrapper dir).
-          Compress-Archive -Path "release/$stage/cua-driver.exe","release/$stage/cua-cursor-theme.exe","release/$stage/cua-driver-uia.exe","release/$stage/cua_driver_sdk.dll","release/$stage/cua_driver_node_runtime.node","release/$stage/cua_driver_abi.h" -DestinationPath "release/$stage-binary.zip" -Force
-          Get-ChildItem "release/$stage*.zip"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cua-driver-rs-windows-${{ matrix.arch }}
-          path: libs/cua-driver/rust/release/cua-driver-rs-*-windows-${{ matrix.arch }}*.zip
-          if-no-files-found: error
-
-  # Load the exact candidate Node runtime on native x64 and ARM64 Windows.
-  # The build job also rejects dynamic CRT imports, while this job proves the
-  # staged addon and SDK DLL work together through the public TypeScript API.
-  verify-windows-node-runtime:
-    name: Windows ${{ matrix.node_arch }} packaged Node runtime
-    needs: build-windows
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            release_arch: x86_64
-            node_arch: x64
-          - os: windows-11-arm
-            release_arch: arm64
-            node_arch: arm64
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.rebuild_sha || inputs.source_ref || github.ref }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: libs/cua-driver/typescript/package-lock.json
-      - uses: actions/download-artifact@v4
-        with:
-          name: cua-driver-rs-windows-${{ matrix.release_arch }}
-          path: artifacts
-      - name: Build TypeScript SDK
-        working-directory: libs/cua-driver/typescript
-        run: |
-          npm ci
-          npm run build
-      - name: Stage exact candidate native package
-        shell: pwsh
-        run: |
-          $archives = @(Get-ChildItem artifacts -Recurse `
-            -Filter "*-windows-${{ matrix.release_arch }}-binary.zip")
-          if ($archives.Count -ne 1) {
-            throw "Expected one Windows candidate archive, found $($archives.Count)"
-          }
-          $candidate = Join-Path $env:RUNNER_TEMP "cua-driver-node-candidate"
-          Expand-Archive -LiteralPath $archives[0].FullName -DestinationPath $candidate
-
-          $triple = "win32-${{ matrix.node_arch }}-msvc"
-          $package = "libs/cua-driver/typescript/node_modules/@trycua/cua-driver-$triple"
-          New-Item -ItemType Directory -Force -Path $package | Out-Null
-          Copy-Item (Join-Path $candidate "cua_driver_sdk.dll") $package
-          Copy-Item (Join-Path $candidate "cua_driver_node_runtime.node") $package
-          @{
-            name = "@trycua/cua-driver-$triple"
-            version = "0.0.0-candidate"
-            private = $true
-          } | ConvertTo-Json | Set-Content (Join-Path $package "package.json")
-      - name: Import exact candidate through public SDK
-        shell: pwsh
-        run: |
-          node --input-type=module -e `
-            "if (process.arch !== '${{ matrix.node_arch }}') throw new Error('unexpected Node architecture ' + process.arch); const sdk = await import('./libs/cua-driver/typescript/dist/index.js'); const driver = sdk.CuaDriver.connect(undefined); console.log(process.platform, process.arch, driver.socketPath()); driver.uniffiDestroy();"
-
-  # ── macOS universal (arm64 + x86_64 → lipo) ─────────────────────────────────
-  # Mirrors cd-swift-cua-driver.yml's approach: build both arches in one job
-  # on macos-26, then combine into a universal binary via `lipo -create`.
-  # The same universal binary is used in BOTH the arm64 and x86_64 named
-  # tarballs (so callers that download by arch still get the universal
-  # binary), plus a third `darwin-universal` tarball and a bare binary.
-  #
-  # Runner pinned to macos-26 because `screencapturekit` (added in PR #1720
-  # for the native ScreenCaptureKit recording backend) pulls in
-  # `apple-metal v0.8.7`, whose Swift bridge references macOS 26 Metal
-  # symbols (`MTLSamplerReductionMode`, `MTLSamplerDescriptor.reductionMode`,
-  # `.lodBias`). The macos-15 runner ships a macOS 15 SDK that doesn't
-  # expose those symbols, so the transitive Swift bridge fails to compile.
   build-macos-universal:
     name: darwin-universal
     needs: release-attribution-preflight
@@ -1147,7 +892,7 @@ jobs:
   # would miss an incomplete upload or archive member list.
   verify-release-artifacts:
     name: release artifact contract
-    needs: [build-linux, build-windows, build-macos-universal]
+    needs: ["build-linux", "build-macos-universal"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1178,7 +923,7 @@ jobs:
       - name: Verify installer-facing archive contract
         run: |
           python3 .github/scripts/verify_cua_driver_release_archives.py \
-            --artifacts artifacts \
+            --artifacts artifacts --skip-windows \
             --version "${{ steps.version.outputs.version }}"
 
   # Exercise the exact Linux x86_64 archive through consumers that users run.
@@ -1265,17 +1010,6 @@ jobs:
     with:
       ref: ${{ inputs.channel == 'nightly' && inputs.source_ref || inputs.rebuild_sha || github.sha }}
 
-  e2e-windows:
-    name: release gate / Windows E2E
-    needs: release-attribution-preflight
-    if: ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/cua-driver-rs-v')) || (github.event_name == 'workflow_dispatch' && inputs.rebuild_tag != '')) || inputs.channel == 'nightly'
-    permissions:
-      actions: read
-      contents: read
-    uses: ./.github/workflows/e2e-rust-windows.yml
-    with:
-      ref: ${{ inputs.channel == 'nightly' && inputs.source_ref || inputs.rebuild_sha || github.sha }}
-
   e2e-macos:
     name: release gate / macOS hosted E2E
     needs: release-attribution-preflight
@@ -1318,28 +1052,6 @@ jobs:
       verify_macos: true
       verify_windows: false
 
-  verify-windows-release-signatures:
-    name: Windows release signatures
-    needs: [release-attribution-preflight, build-windows]
-    uses: ./.github/workflows/cua-driver-release-signatures.yml
-    with:
-      version: ${{ needs.release-attribution-preflight.outputs.version }}
-      source: artifacts
-      verify_macos: false
-      verify_windows: true
-
-  # ── Release ──────────────────────────────────────────────────────────────────
-  # The stable tag push that Release Please creates publishes its own draft
-  # release. No manual dispatch is involved: `release` runs only on that tag
-  # push and only after every build, release check, and E2E gate succeeds, so
-  # the GitHub release (and therefore the PyPI/npm SDK packages) never becomes
-  # public before that evidence exists. Nightly and manual build-only runs skip
-  # it.
-  # Start the staging smoke for this tag (CUA-1993): trycua/cloud's
-  # spaces-staging-smoke workflow runs it and posts the commit status that
-  # `staging-gate` waits for. Needs the release app installed on trycua/cloud
-  # (RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY). Never fails the run: without it
-  # the gate times out and the smoke is started by hand as before.
   request-staging-smoke:
     name: Request the staging smoke
     if: ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/cua-driver-rs-v')) || (github.event_name == 'workflow_dispatch' && inputs.rebuild_tag != ''))
@@ -1389,20 +1101,7 @@ jobs:
 
   release:
     needs:
-      - staging-gate
-      - build-linux
-      - build-windows
-      - build-macos-universal
-      - verify-windows-node-runtime
-      - verify-release-artifacts
-      - verify-mcp-client-discovery
-      - build-hyprland-plugin-source
-      - verify-macos-release-signatures
-      - verify-windows-release-signatures
-      - e2e-linux
-      - e2e-windows
-      - e2e-macos
-      - e2e-standalone-browsers
+        ["staging-gate", "build-linux", "build-macos-universal", "verify-release-artifacts", "verify-mcp-client-discovery", "build-hyprland-plugin-source", "verify-macos-release-signatures", "e2e-linux", "e2e-macos", "e2e-standalone-browsers"]
     if: ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/cua-driver-rs-v')) || (github.event_name == 'workflow_dispatch' && inputs.rebuild_tag != ''))
     runs-on: ubuntu-latest
     # id-token: keyless Sigstore bundles for every release asset. The
@@ -1419,10 +1118,9 @@ jobs:
         env:
           DO_NOTARIZE: ${{ ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/cua-driver-rs-v')) || (github.event_name == 'workflow_dispatch' && inputs.rebuild_tag != '')) || inputs.notarize == true }}
           MACOS_SIGNATURES: ${{ needs.verify-macos-release-signatures.result }}
-          WINDOWS_SIGNATURES: ${{ needs.verify-windows-release-signatures.result }}
         run: |
-          echo "notarize: ${DO_NOTARIZE}; macOS signatures: ${MACOS_SIGNATURES}; Windows signatures: ${WINDOWS_SIGNATURES}"
-          if [[ "$DO_NOTARIZE" != "true" || "$MACOS_SIGNATURES" != "success" || "$WINDOWS_SIGNATURES" != "success" ]]; then
+          echo "notarize: ${DO_NOTARIZE}; macOS signatures: ${MACOS_SIGNATURES}"
+          if [[ "$DO_NOTARIZE" != "true" || "$MACOS_SIGNATURES" != "success" ]]; then
             echo "::error title=Release safety::Publishing requires notarized macOS artifacts and passing signature verification (#4109)."
             exit 1
           fi

@@ -27,10 +27,6 @@ on:
         description: "Producer Actions run ID containing the signed review candidates"
         required: true
         type: string
-      windows_e2e_run_id:
-        description: "Actions run ID of an independent, already-completed canonical e2e-rust-windows.yml run at source_sha"
-        required: true
-        type: string
       linux_e2e_run_id:
         description: "Actions run ID of an independent, already-completed canonical e2e-rust-linux.yml run at source_sha"
         required: true
@@ -59,10 +55,6 @@ on:
         type: string
       signed_candidate_run_id:
         description: "Producer Actions run ID containing the signed review candidates"
-        required: true
-        type: string
-      windows_e2e_run_id:
-        description: "Actions run ID of an independent, already-completed canonical e2e-rust-windows.yml run at source_sha"
         required: true
         type: string
       linux_e2e_run_id:
@@ -107,7 +99,6 @@ jobs:
           REQUESTED_JEV_SHA: ${{ inputs.jev_source_sha }}
           CANDIDATE_ARTIFACT_ID: ${{ inputs.signed_candidate_artifact_id }}
           CANDIDATE_RUN_ID: ${{ inputs.signed_candidate_run_id }}
-          WINDOWS_E2E_RUN_ID: ${{ inputs.windows_e2e_run_id }}
           LINUX_E2E_RUN_ID: ${{ inputs.linux_e2e_run_id }}
           EVENT_ACTION: ${{ github.event.action }}
           EVENT_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
@@ -123,7 +114,6 @@ jobs:
           [[ "$REQUESTED_JEV_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "jev_source_sha must be exactly 40 lowercase hexadecimal characters" >&2; exit 2; }
           [[ "$CANDIDATE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || { echo "signed_candidate_artifact_id must be numeric" >&2; exit 2; }
           [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "signed_candidate_run_id must be numeric" >&2; exit 2; }
-          [[ "$WINDOWS_E2E_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "windows_e2e_run_id must be numeric" >&2; exit 2; }
           [[ "$LINUX_E2E_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "linux_e2e_run_id must be numeric" >&2; exit 2; }
           validate_pr_head() {
             local number="$1" requested="$2" label="$3" state head_sha head_repo
@@ -192,7 +182,6 @@ jobs:
           }
           validate_pr_head "$SOURCE_PR_NUMBER" "$REQUESTED_SHA" source_sha
           validate_merged_pr "$JEV_PR_NUMBER" "$REQUESTED_JEV_SHA" jev_source_sha
-          validate_e2e_run "$WINDOWS_E2E_RUN_ID" ".github/workflows/e2e-rust-windows.yml" rust-windows-e2e-certification windows windows_e2e_run_id
           validate_e2e_run "$LINUX_E2E_RUN_ID" ".github/workflows/e2e-rust-linux.yml" rust-linux-e2e-certification linux linux_e2e_run_id
           artifact_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$CANDIDATE_ARTIFACT_ID")"
           [[ "$(jq -r .name <<<"$artifact_json")" == "STAGING-cua-perception-review-candidates-$REQUESTED_SHA" ]] || { echo "candidate artifact has the wrong aggregate name" >&2; exit 2; }
@@ -263,8 +252,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {platform: windows, runner: windows-latest, target: x86_64-pc-windows-msvc, driver: review-cua-driver.exe, desktop_session: windows-interactive}
-          - {platform: linux-x11, runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, driver: review-cua-driver, desktop_session: x11-openbox}
+          - platform: linux-x11
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            driver: review-cua-driver
+            desktop_session: x11-openbox
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     environment: authorized-live-jev-use-demo
@@ -319,10 +311,6 @@ jobs:
           path: ${{ runner.temp }}/perception-candidate
           github-token: ${{ github.token }}
           merge-multiple: true
-      - name: Prepare Windows recording support
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: .\scripts\ci\windows\setup-ffmpeg.ps1
       - name: Prepare Linux X11 desktop
         if: runner.os == 'Linux'
         shell: bash
