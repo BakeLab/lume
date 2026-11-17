@@ -131,24 +131,6 @@ jobs:
       - name: Test Computer History purge during uninstall
         run: /bin/bash libs/cua-driver/scripts/tests/uninstall-history-purge-test.sh
 
-  windows-uninstall:
-    needs: quick
-    if: ${{ !failure() && !cancelled() }}
-    runs-on: windows-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Test Windows release uninstall reporting
-        shell: powershell
-        run: '& ./libs/cua-driver/scripts/tests/uninstall-windows-regression.ps1'
-      - name: Test Windows installer daemon cleanup spares its launcher
-        shell: powershell
-        run: '& ./libs/cua-driver/scripts/tests/install-common-windows-regression.ps1'
-
   test:
     needs: quick
     if: ${{ !failure() && !cancelled() }}

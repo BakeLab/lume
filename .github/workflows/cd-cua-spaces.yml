@@ -207,7 +207,7 @@ on:
         type: boolean
         default: false
       platforms:
-        description: "Platforms to build and publish: all (default) or a comma list of macos, windows, linux (needs platforms_reason)"
+        description: "Platforms to build and publish: all (default) or a comma list of macos, linux (needs platforms_reason)"
         required: false
         default: "all"
       platforms_reason:
@@ -821,9 +821,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: linux-x64, os: ubuntu-22.04, bundles: "deb,appimage" }
-          - { name: linux-arm64, os: ubuntu-22.04-arm, bundles: "deb,appimage" }
-          - { name: windows-x64, os: windows-latest, bundles: "nsis,msi" }
+          - name: linux-x64
+            os: ubuntu-22.04
+            bundles: deb,appimage
+          - name: linux-arm64
+            os: ubuntu-22.04-arm
+            bundles: deb,appimage
     runs-on: ${{ matrix.os }}
     env:
       CARGO_BUILD_JOBS: 4
@@ -914,87 +917,6 @@ jobs:
       # Windows: compile, Authenticode-sign the app and the cua sidecar, bundle
       # the signed binaries, sign the installers, then regenerate the updater
       # signatures so they cover the signed installers.
-      - name: Build the Windows app (no bundle yet)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: pnpm tauri build --no-bundle --config src-tauri/tauri.release.conf.json
-      - name: Azure login for Artifact Signing
-        if: runner.os == 'Windows' && vars.AZURE_CLIENT_ID != ''
-        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Sign the app and the cua sidecar
-        if: runner.os == 'Windows' && vars.AZURE_CLIENT_ID != ''
-        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
-        with:
-          # Install the module on every run: a cached one skipped the install and was not found (#5838).
-          cache-dependencies: 'false'
-          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
-          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          files-folder: ${{ github.workspace }}\apps\cua-spaces\src-tauri\binaries
-          files-folder-filter: exe
-          files: |
-            ${{ github.workspace }}\apps\cua-spaces\src-tauri\target\release\cua-spaces.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-          description: Cua Spaces
-          description-url: https://cua.ai
-      - name: Bundle the Windows installers
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri bundle --bundles ${{ matrix.bundles }} --config src-tauri/tauri.release.conf.json
-      - name: Sign the Windows installers
-        if: runner.os == 'Windows' && vars.AZURE_CLIENT_ID != ''
-        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
-        with:
-          # Install the module on every run: a cached one skipped the install and was not found (#5838).
-          cache-dependencies: 'false'
-          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
-          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          files-folder: ${{ github.workspace }}\apps\cua-spaces\src-tauri\target\release\bundle
-          files-folder-filter: exe,msi
-          files-folder-recurse: true
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-          description: Cua Spaces
-          description-url: https://cua.ai
-      - name: Verify Authenticode and re-sign the updater artifacts
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          $files = @(Get-Item src-tauri/target/release/cua-spaces.exe) +
-            @(Get-ChildItem src-tauri/binaries -Filter *.exe) +
-            @(Get-ChildItem src-tauri/target/release/bundle/msi -Filter *.msi) +
-            @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *-setup.exe)
-          foreach ($file in $files) {
-            $signature = Get-AuthenticodeSignature -FilePath $file.FullName
-            Write-Host "$($file.Name): $($signature.Status)"
-            if ($env:REQUIRE_SIGNING -eq 'true' -and $signature.Status -ne 'Valid') {
-              throw "$($file.Name) is not Authenticode-signed"
-            }
-          }
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            $installers = @(Get-ChildItem src-tauri/target/release/bundle/msi -Filter *.msi) +
-              @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *-setup.exe)
-            foreach ($installer in $installers) {
-              Remove-Item "$($installer.FullName).sig" -ErrorAction SilentlyContinue
-              pnpm tauri signer sign $installer.FullName
-              if ($LASTEXITCODE -ne 0) { throw "updater signing failed for $($installer.Name)" }
-              if (-not (Test-Path "$($installer.FullName).sig")) { throw "no updater signature for $($installer.Name)" }
-            }
-          }
       - name: Upload installer and updater assets (stable names)
         shell: bash
         env:
@@ -1135,7 +1057,7 @@ jobs:
             --reason "$INPUT_PLATFORMS_REASON" ${force:+--force-all "$force"} > plan.txt
           cat plan.txt
           macos="$(sed -n 's/^macos=//p' plan.txt)"
-          win="$(sed -n 's/^windows=//p' plan.txt)"
+          win=false # Windows builds are disabled in this fork.
           lin="$(sed -n 's/^linux=//p' plan.txt)"
           reason="$(sed -n 's/^reason=//p' plan.txt)"
           # macOS Electron (`build`) rides on macOS; Windows and Linux on `desktop`.
@@ -1153,11 +1075,6 @@ jobs:
           import json, sys
           win, lin = sys.argv[1] == "true", sys.argv[2] == "true"
           include = []
-          if win:
-              include += [
-                  {"label": "win32-x64", "runner": "windows-latest", "target": "x86_64-pc-windows-msvc"},
-                  {"label": "win32-arm64", "runner": "windows-11-arm", "target": "aarch64-pc-windows-msvc"},
-              ]
           if lin:
               include += [
                   {"label": "linux-x64", "runner": "ubuntu-22.04", "target": "x86_64-unknown-linux-gnu"},
@@ -1612,219 +1529,6 @@ jobs:
 
   # Windows: x64 and arm64 are packaged and signed in parallel, then joined
   # (electron-windows) into the one artifact the rest of the workflow reads.
-  electron-windows-pkg:
-    name: Electron windows (${{ matrix.arch }})
-    needs: [electron-plan, electron-native, electron-web]
-    if: needs.electron-plan.outputs.desktop == 'true' && needs.electron-plan.outputs.windows == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64, arm64]
-    # Holds the Azure Artifact Signing identity (Windows Authenticode).
-    environment: cua-driver-release-signing
-    permissions:
-      contents: read
-      id-token: write
-    outputs:
-      signed: ${{ steps.signing.outputs.azure }}
-    defaults:
-      run:
-        working-directory: apps/cua-spaces-desktop
-        shell: bash
-    env:
-      VERSION: ${{ needs.electron-plan.outputs.version }}
-      # Pack this architecture only (packaging/archs.cjs).
-      CUA_SPACES_ARCHS: ${{ matrix.arch }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.rebuild_sha || github.sha }}
-      - name: Signing configuration
-        id: signing
-        env:
-          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-        run: |
-          if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_ARTIFACT_SIGNING_ENDPOINT" ]; then
-            echo "azure=true" >> "$GITHUB_OUTPUT"
-          elif [ "$REQUIRE_SIGNING" = true ]; then
-            echo "::error::Azure Artifact Signing vars are missing (environment cua-driver-release-signing)"; exit 1
-          else
-            echo "azure=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Electron Windows build is UNSIGNED (no Authenticode; Azure Artifact Signing vars are not set)"
-          fi
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-        with:
-          package_json_file: apps/cua-spaces-desktop/package.json
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Download the web UI
-        uses: actions/download-artifact@v4
-        with:
-          name: spaces-web-dist
-          path: apps/cua-spaces-web/dist
-      - name: Native library
-        uses: actions/download-artifact@v4
-        with:
-          name: electron-native-win32-${{ matrix.arch }}
-          path: apps/cua-spaces-desktop/native/win32-${{ matrix.arch }}
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Azure login for Artifact Signing
-        if: steps.signing.outputs.azure == 'true'
-        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          enable-AzPSSession: true
-      # electron-builder installs the TrustedSigning module from the PowerShell
-      # Gallery on first use and fails the whole build when the Gallery blips
-      # (shadow build 39900294264). Install it here with retries instead.
-      - name: Install the TrustedSigning module (with retries)
-        if: steps.signing.outputs.azure == 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($i in 1..4) {
-            try {
-              # PSResourceGet (in PowerShell 7) needs no NuGet package provider; the
-              # provider bootstrap behind Install-PackageProvider stopped resolving.
-              if (Get-Command Install-PSResource -ErrorAction SilentlyContinue) {
-                Install-PSResource -Name TrustedSigning -Repository PSGallery -TrustRepository -Scope CurrentUser -Reinstall
-              } else {
-                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
-                Install-Module -Name TrustedSigning -Scope CurrentUser -Force -Repository PSGallery
-              }
-              Import-Module TrustedSigning
-              Write-Host "TrustedSigning $((Get-Module TrustedSigning).Version) ready"
-              exit 0
-            } catch {
-              Write-Host "attempt ${i} failed: $($_.Exception.Message)"
-              Start-Sleep -Seconds (15 * $i)
-            }
-          }
-          throw 'TrustedSigning module could not be installed'
-      - name: Build and sign (electron-builder)
-        env:
-          SIGNED: ${{ steps.signing.outputs.azure }}
-          CUA_SPACES_VERSION: ${{ needs.electron-plan.outputs.version }}
-          CUA_SPACES_BUILD_NUMBER: ${{ github.run_number }}
-          ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-          ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
-          PROFILE: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          # The certificate's CN (electron-builder requires it with
-          # azureSignOptions; electron-updater accepts only installers signed
-          # by it): the Azure profile's, Cua AI, Inc., unless the variable says.
-          PUBLISHER: ${{ vars.AZURE_ARTIFACT_SIGNING_PUBLISHER_NAME || 'Cua AI, Inc.' }}
-        run: |
-          set -euo pipefail
-          if [ "$SIGNED" = true ]; then
-            # electron-builder's names (electron-builder.config.cjs); the
-            # credential is the azure/login session.
-            export AZURE_SIGNING_ENDPOINT="$ENDPOINT" AZURE_SIGNING_ACCOUNT="$ACCOUNT" AZURE_SIGNING_PROFILE="$PROFILE"
-            [ -n "$PUBLISHER" ] && export AZURE_SIGNING_PUBLISHER="$PUBLISHER"
-          fi
-          pnpm dist:win
-      - name: Verify Authenticode and collect the assets
-        shell: pwsh
-        env:
-          SIGNED: ${{ steps.signing.outputs.azure }}
-          ARCH: ${{ matrix.arch }}
-        run: |
-          $files = @(Get-ChildItem dist -Filter *.exe) + @(Get-ChildItem dist/win-unpacked, dist/win-arm64-unpacked -Filter "Cua Spaces.exe" -ErrorAction SilentlyContinue)
-          if ($files.Count -lt 2) { throw "no Windows installer for $env:ARCH in dist" }
-          if (-not (Test-Path "dist/Cua-Spaces-Setup-$env:VERSION-$env:ARCH.exe")) { throw "no Cua-Spaces-Setup-$env:VERSION-$env:ARCH.exe in dist" }
-          foreach ($file in $files) {
-            $signature = Get-AuthenticodeSignature -FilePath $file.FullName
-            Write-Host "$($file.Name): $($signature.Status)"
-            if ($env:SIGNED -eq 'true' -and $signature.Status -ne 'Valid') { throw "$($file.Name) is not Authenticode-signed" }
-          }
-          New-Item -ItemType Directory -Force electron-assets, electron-feed | Out-Null
-          Copy-Item dist/*.exe, dist/*.blockmap electron-assets/
-          Copy-Item dist/beta.yml, dist/latest.yml electron-feed/ -ErrorAction SilentlyContinue
-          if ($env:ARCH -eq 'x64') {
-            if ($env:SIGNED -eq 'true') {
-              "electron-windows: Authenticode signed (Electron app, Azure Artifact Signing)" | Set-Content electron-assets/signing-electron-windows.txt
-            } else {
-              "electron-windows: UNSIGNED (Electron app, no Authenticode)" | Set-Content electron-assets/signing-electron-windows.txt
-            }
-          }
-          Get-FileHash electron-assets/* | Format-Table -AutoSize
-      - uses: actions/upload-artifact@v4
-        with:
-          name: electron-windows-${{ matrix.arch }}
-          path: apps/cua-spaces-desktop/electron-assets/
-          if-no-files-found: error
-          retention-days: 7
-      # Each arch's own feed; electron-windows joins them.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: winfeed-${{ matrix.arch }}
-          path: apps/cua-spaces-desktop/electron-feed/
-          if-no-files-found: error
-          retention-days: 7
-
-  # The two Windows builds as the one `electron-windows` artifact (installers,
-  # blockmaps, the signing note and a feed that lists both installers) that
-  # electron-publish and verify-release read.
-  electron-windows:
-    name: Electron windows (x64, arm64)
-    needs: [electron-plan, electron-windows-pkg]
-    if: needs.electron-plan.outputs.desktop == 'true' && needs.electron-plan.outputs.windows == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    outputs:
-      signed: ${{ needs.electron-windows-pkg.outputs.signed }}
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.rebuild_sha || github.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: winfeed-*
-          path: winfeed
-      - name: Join the feeds
-        run: |
-          set -euo pipefail
-          mkdir -p merged-feed
-          for name in latest.yml beta.yml; do
-            if [ -f "winfeed/winfeed-x64/$name" ] || [ -f "winfeed/winfeed-arm64/$name" ]; then
-              test -f "winfeed/winfeed-x64/$name" && test -f "winfeed/winfeed-arm64/$name" \
-                || { echo "::error::$name is missing from one architecture's build"; exit 1; }
-              node apps/cua-spaces-desktop/scripts/merge-feeds.mjs --out "merged-feed/$name" \
-                "winfeed/winfeed-x64/$name" "winfeed/winfeed-arm64/$name"
-            fi
-          done
-          ls merged-feed
-          test -n "$(ls merged-feed)" || { echo "::error::no Windows feed"; exit 1; }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: electron-windows-feed
-          path: merged-feed/
-          if-no-files-found: error
-          retention-days: 7
-      # Installers, blockmaps and the signing note of both architectures, and
-      # the joined feed, as electron-windows (merged without downloading).
-      - uses: actions/upload-artifact/merge@v4
-        with:
-          name: electron-windows
-          pattern: electron-windows-*
-          retention-days: 7
-
-  # Linux: x64 and arm64 packaged in parallel (fpm and the AppImage tools run
-  # on x64 for both), joined as `electron-linux`.
   electron-linux-pkg:
     name: Electron linux (${{ matrix.arch }})
     needs: [electron-plan, electron-native, electron-web]
@@ -1927,13 +1631,12 @@ jobs:
   # published.
   electron-publish:
     name: Electron publish
-    needs: [electron-plan, electron-mac, electron-windows, electron-linux]
+    needs: ["electron-plan", "electron-mac", "electron-linux"]
     # electron-mac is skipped on a stable release (macOS stays the SwiftUI app),
     # electron-windows or electron-linux in a patch release without that
     # platform; the platforms that are planned must have succeeded.
     if: >-
       !cancelled() && needs.electron-plan.outputs.publish_electron == 'true'
-      && (needs.electron-plan.outputs.windows != 'true' || needs.electron-windows.result == 'success')
       && (needs.electron-plan.outputs.linux != 'true' || needs.electron-linux.result == 'success')
       && (needs.electron-mac.result == 'success' || needs.electron-mac.result == 'skipped')
     runs-on: ubuntu-latest
@@ -1952,11 +1655,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: electron-darwin
-          path: electron
-      - if: needs.electron-plan.outputs.windows == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: electron-windows
           path: electron
       - if: needs.electron-plan.outputs.linux == 'true'
         uses: actions/download-artifact@v4
@@ -2160,13 +1858,12 @@ jobs:
 
   verify-release:
     name: Verify the signed release
-    needs: [build-macos, electron-plan, electron-mac, electron-windows, electron-publish]
+    needs: ["build-macos", "electron-plan", "electron-mac", "electron-publish"]
     # Each platform that is in this release must have built (build-macos is
     # skipped, not failed, when a patch release has no macOS).
     if: >-
       !cancelled() && needs.electron-plan.result == 'success'
       && (needs.electron-plan.outputs.macos != 'true' || needs.build-macos.result == 'success')
-      && (needs.electron-plan.outputs.windows != 'true' || needs.electron-windows.result == 'success')
       && (needs.electron-plan.outputs.build != 'true' || needs.electron-mac.result == 'success')
       && (needs.electron-plan.outputs.publish_electron != 'true' || needs.electron-publish.result == 'success')
     runs-on: macos-26
@@ -2184,7 +1881,7 @@ jobs:
       ELECTRON_MAC: ${{ needs.electron-plan.outputs.build }}
       SWIFT_SIGNED: ${{ needs.build-macos.outputs.signed }}
       ELECTRON_MAC_SIGNED: ${{ needs.electron-mac.outputs.signed }}
-      ELECTRON_WINDOWS_SIGNED: ${{ needs.electron-windows.outputs.signed }}
+      ELECTRON_WINDOWS_SIGNED: "false"
       APPCAST: ${{ needs.build-macos.outputs.appcast == 'true' || needs.electron-mac.outputs.appcast == 'true' }}
     steps:
       - uses: actions/checkout@v4
@@ -2199,11 +1896,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: electron-darwin
-          path: release
-      - if: needs.electron-plan.outputs.windows == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: electron-windows
           path: release
       # The published feed (absolute URLs) replaces the build's.
       - if: needs.electron-publish.result == 'success'

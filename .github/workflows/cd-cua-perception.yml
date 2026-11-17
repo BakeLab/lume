@@ -207,15 +207,10 @@ jobs:
             target: x86_64-unknown-linux-gnu
             input_artifact: cua-perception-input-linux-x86_64
             worker: cua-perception
-          # Match the production Driver build and hosted desktop E2E image.
           - runner: macos-26
             target: aarch64-apple-darwin
             input_artifact: cua-perception-input-macos-aarch64
             worker: cua-perception
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            input_artifact: cua-perception-input-windows-x86_64
-            worker: cua-perception.exe
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -330,23 +325,6 @@ jobs:
           fi
           bash libs/cua-driver/scripts/install.sh --no-modify-path
           echo "CUA_DRIVER_BINARY=$CUA_DRIVER_RS_INSTALL_DIR/cua-driver" >> "$GITHUB_ENV"
-      - name: Install the published Cua Driver (Windows)
-        if: needs.resolve.outputs.publish != 'true' && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $root = Join-Path $env:RUNNER_TEMP "cua-driver-installer"
-          $env:CUA_DRIVER_RS_HOME = Join-Path $root "home"
-          $env:CUA_DRIVER_RS_INSTALL_DIR = Join-Path $root "bin"
-          $env:CUA_DRIVER_RS_TELEMETRY_ENABLED = "false"
-          & ./libs/cua-driver/scripts/install.ps1 -NoAutoStart -NoPathUpdate
-          $binary = Join-Path $env:CUA_DRIVER_RS_INSTALL_DIR "cua-driver.exe"
-          if (-not (Test-Path -LiteralPath $binary)) { throw "installer did not create $binary" }
-          # The installer can leave a nonzero $LASTEXITCODE from an optional
-          # probe; the step result must reflect the installed binary instead.
-          & $binary --version
-          if ($LASTEXITCODE -ne 0) { throw "installed binary exited with $LASTEXITCODE" }
-          "CUA_DRIVER_BINARY=$binary" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          exit 0
       - name: Developer-only install check of the unsigned package
         if: needs.resolve.outputs.publish != 'true'
         shell: bash
@@ -380,9 +358,6 @@ jobs:
           - target_os: macos
             target_triple: aarch64-apple-darwin
             payload_artifact: cua-perception-input-macos-aarch64
-          - target_os: windows
-            target_triple: x86_64-pc-windows-msvc
-            payload_artifact: cua-perception-input-windows-x86_64
     uses: ./.github/workflows/cd-cua-perception-candidate.yml
     with:
       payload_artifact: ${{ matrix.payload_artifact }}
@@ -408,8 +383,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - runner: macos-26
             target: aarch64-apple-darwin
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
@@ -499,23 +472,6 @@ jobs:
           fi
           bash libs/cua-driver/scripts/install.sh --no-modify-path
           echo "CUA_DRIVER_BINARY=$CUA_DRIVER_RS_INSTALL_DIR/cua-driver" >> "$GITHUB_ENV"
-      - name: Install the published Cua Driver (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $root = Join-Path $env:RUNNER_TEMP "cua-driver-installer"
-          $env:CUA_DRIVER_RS_HOME = Join-Path $root "home"
-          $env:CUA_DRIVER_RS_INSTALL_DIR = Join-Path $root "bin"
-          $env:CUA_DRIVER_RS_TELEMETRY_ENABLED = "false"
-          & ./libs/cua-driver/scripts/install.ps1 -NoAutoStart -NoPathUpdate
-          $binary = Join-Path $env:CUA_DRIVER_RS_INSTALL_DIR "cua-driver.exe"
-          if (-not (Test-Path -LiteralPath $binary)) { throw "installer did not create $binary" }
-          # The installer can leave a nonzero $LASTEXITCODE from an optional
-          # probe; the step result must reflect the installed binary instead.
-          & $binary --version
-          if ($LASTEXITCODE -ne 0) { throw "installed binary exited with $LASTEXITCODE" }
-          "CUA_DRIVER_BINARY=$binary" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          exit 0
       - name: Inspect, install, self-test, parse, and remove with the published Driver
         shell: bash
         env:
@@ -594,7 +550,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir release-upload
-          for TARGET in aarch64-apple-darwin x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+          for TARGET in aarch64-apple-darwin x86_64-unknown-linux-gnu; do
             DIR="signed/STAGING-cua-perception-candidate-$TARGET-$SOURCE_SHA"
             BASE="cua-perception-$VERSION-$TARGET"
             python3 .github/scripts/perception_release.py verify-checksums "$DIR/signed-candidate-checksums.txt"
@@ -640,7 +596,6 @@ jobs:
           | --- | --- | --- |
           | macOS arm64 | \`cua-perception-$VERSION-aarch64-apple-darwin.catalog.json\` | \`cua-perception-$VERSION-aarch64-apple-darwin.tar.gz\` |
           | Linux x64 | \`cua-perception-$VERSION-x86_64-unknown-linux-gnu.catalog.json\` | \`cua-perception-$VERSION-x86_64-unknown-linux-gnu.tar.gz\` |
-          | Windows x64 | \`cua-perception-$VERSION-x86_64-pc-windows-msvc.catalog.json\` | \`cua-perception-$VERSION-x86_64-pc-windows-msvc.tar.gz\` |
 
           \`\`\`bash
           cua-driver extension inspect cua-perception --catalog cua-perception-$VERSION-<target>.catalog.json

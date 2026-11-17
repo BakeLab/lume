@@ -87,6 +87,19 @@ def test_complete_release_archive_set_passes(tmp_path: Path) -> None:
     assert len(verified) == len(contracts) == 12
 
 
+def test_fork_release_verifies_without_windows_archives(tmp_path: Path) -> None:
+    contracts = _write_valid_release(tmp_path)
+    for contract in contracts:
+        if contract.binary_format == "pe":
+            (tmp_path / contract.filename).unlink()
+    assert len(verify_release_archives(tmp_path, VERSION, skip_windows=True)) == 8
+    with pytest.raises(ContractError):
+        verify_release_archives(tmp_path, VERSION)
+    (tmp_path / next(c.filename for c in contracts if c.binary_format == "elf")).unlink()
+    with pytest.raises(ContractError):
+        verify_release_archives(tmp_path, VERSION, skip_windows=True)
+
+
 def test_missing_cursor_theme_fails_with_archive_and_member(
     tmp_path: Path,
 ) -> None:

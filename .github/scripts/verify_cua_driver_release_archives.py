@@ -379,11 +379,13 @@ def _verify_zip(path: Path, contract: ArchiveContract) -> None:
             _verify_binary(path, contract, expected, archive.read(members[expected]))
 
 
-def verify_release_archives(root: Path, version: str) -> tuple[Path, ...]:
+def verify_release_archives(root: Path, version: str, *, skip_windows: bool = False) -> tuple[Path, ...]:
     """Verify all archives for *version* below *root*."""
 
     verified: list[Path] = []
     for contract in release_contracts(version):
+        if skip_windows and contract.binary_format == "pe":
+            continue
         path = _find_archive(root, contract.filename)
         if path.name.endswith(".tar.gz"):
             _verify_tar(path, contract)
@@ -399,10 +401,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--skip-windows", action="store_true", help="Verify only Linux and macOS fork builds")
     args = parser.parse_args()
 
     try:
-        verified = verify_release_archives(args.artifacts, args.version)
+        verified = verify_release_archives(args.artifacts, args.version, skip_windows=args.skip_windows)
     except (ContractError, tarfile.TarError, zipfile.BadZipFile) as error:
         parser.error(str(error))
 

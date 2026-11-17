@@ -3,7 +3,7 @@ name: "CI: Cua Spaces desktop install smoke"
 # Installs the built Cua Spaces Electron app on GitHub-hosted Windows and Linux
 # runners, launches it, checks that a window opens, screenshots it, and
 # uninstalls. The artifacts come from the latest "CD: Cua Spaces" run that still
-# has unexpired electron-windows and electron-linux artifacts (they expire, so
+# has unexpired electron-linux artifacts (they expire, so
 # the run id is looked up each time instead of being pinned).
 
 on:
@@ -54,103 +54,10 @@ jobs:
             gh api --paginate "repos/$GH_REPO/actions/artifacts?name=$1&per_page=100" \
               --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' | sort -u
           }
-          id=$(comm -12 <(ids electron-windows) <(ids electron-linux) | sort -rn | head -1)
-          if [ -z "$id" ]; then echo "no run with unexpired electron-windows and electron-linux artifacts" >&2; exit 1; fi
+          id=$(ids electron-linux | sort -rn | head -1)
+          if [ -z "$id" ]; then echo "no run with unexpired electron-linux artifacts" >&2; exit 1; fi
           echo "using run $id"
           echo "run_id=$id" >> "$GITHUB_OUTPUT"
-
-  windows:
-    name: Windows x64 install, launch, uninstall
-    needs: resolve
-    runs-on: windows-latest
-    env:
-      RUN_ID: ${{ needs.resolve.outputs.run_id }}
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - name: Download electron-windows
-        run: gh run download $env:RUN_ID -n electron-windows -D dl
-
-      - name: Silent install and Authenticode check
-        run: |
-          $setup = Get-ChildItem dl -Recurse -Filter 'Cua-Spaces-Setup-*-x64.exe' | Select-Object -First 1
-          if (-not $setup) { throw 'x64 setup.exe not found' }
-          Write-Host "setup: $($setup.Name)"
-          $sig = Get-AuthenticodeSignature $setup.FullName
-          Write-Host "status=$($sig.Status) subject=$($sig.SignerCertificate.Subject)"
-          if ($sig.Status -ne 'Valid') { throw "Authenticode status $($sig.Status)" }
-          if ($sig.SignerCertificate.Subject -notmatch 'Cua AI, Inc\.') { throw 'unexpected publisher' }
-          $p = Start-Process $setup.FullName -ArgumentList '/S' -Wait -PassThru
-          Write-Host "installer exit code $($p.ExitCode)"
-          if ($p.ExitCode -ne 0) { throw 'installer failed' }
-          Start-Sleep 5
-          Get-ChildItem "$env:LOCALAPPDATA\Programs" | Format-Table Name
-          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'Cua Spaces.exe' | Select-Object -First 1
-          if (-not $exe) { throw 'Cua Spaces.exe not installed' }
-          Write-Host "installed exe: $($exe.FullName)"
-          $s2 = Get-AuthenticodeSignature $exe.FullName
-          Write-Host "installed exe signature: $($s2.Status) $($s2.SignerCertificate.Subject)"
-          "APP_EXE=$($exe.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-          Get-Process | Where-Object { $_.Name -match 'Cua' } | ForEach-Object { "auto-started after install: $($_.Name) $($_.Id)" }
-
-      - name: Launch, wait for window, screenshot
-        run: |
-          New-Item -ItemType Directory -Force out | Out-Null
-          Get-Process | Where-Object { $_.Name -match '^Cua' } | Stop-Process -Force -ErrorAction SilentlyContinue
-          Start-Sleep 3
-          $env:CUA_SPACES_LOG_STARTUP = '1'
-          $proc = Start-Process $env:APP_EXE -PassThru -RedirectStandardOutput out\stdout.log -RedirectStandardError out\stderr.log
-          $title = $null
-          for ($i = 0; $i -lt 90; $i++) {
-            Start-Sleep 1
-            $w = Get-Process | Where-Object { $_.MainWindowTitle -like '*Cua Spaces*' } | Select-Object -First 1
-            if ($w) { $title = $w.MainWindowTitle; break }
-          }
-          Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object Name, Id, MainWindowTitle | Format-Table | Out-String | Write-Host
-          Start-Sleep 8
-          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
-          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-          $g = [System.Drawing.Graphics]::FromImage($bmp)
-          $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
-          $bmp.Save("$PWD\out\gh-windows-desktop.png")
-          Get-Process | Where-Object { $_.Name -match '^Cua|cua' } | Select-Object Name, Id | Format-Table | Out-String | Write-Host
-          # App data and any logs the app wrote.
-          foreach ($d in "$env:APPDATA\Cua Spaces", "$env:LOCALAPPDATA\Cua Spaces", "$env:USERPROFILE\.cua") {
-            if (Test-Path $d) { Get-ChildItem $d -Recurse -File -ErrorAction SilentlyContinue | Select-Object FullName, Length | Format-Table -AutoSize | Out-String -Width 300 | Write-Host }
-          }
-          Get-ChildItem "$env:APPDATA\Cua Spaces" -Recurse -Include *.log -ErrorAction SilentlyContinue | Copy-Item -Destination out -ErrorAction SilentlyContinue
-          Write-Host '--- stdout'; Get-Content out\stdout.log -ErrorAction SilentlyContinue | Select-Object -First 60
-          Write-Host '--- stderr'; Get-Content out\stderr.log -ErrorAction SilentlyContinue | Select-Object -First 60
-          if (-not $title) { throw 'no window titled Cua Spaces within 90s' }
-          Write-Host "window title: $title"
-          if ($proc.HasExited) { throw "app exited with code $($proc.ExitCode)" }
-
-      - name: Uninstall and check clean
-        if: always()
-        run: |
-          Get-Process | Where-Object { $_.Name -match '^Cua' } | Stop-Process -Force -ErrorAction SilentlyContinue
-          Start-Sleep 3
-          $dir = Split-Path $env:APP_EXE
-          $un = Join-Path $dir 'Uninstall Cua Spaces.exe'
-          if (-not (Test-Path $un)) { throw "uninstaller missing at $un" }
-          $p = Start-Process $un -ArgumentList '/S' -Wait -PassThru
-          Write-Host "uninstaller exit code $($p.ExitCode)"
-          Start-Sleep 8
-          if (Test-Path $env:APP_EXE) { throw 'Cua Spaces.exe still present after uninstall' }
-          Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | Format-Table Name
-          if (Test-Path $dir) { Write-Host "note: $dir still exists:"; Get-ChildItem $dir -Recurse | Select-Object -First 20 FullName }
-          Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like '*Cua*' } | ForEach-Object { throw "uninstall registry key remains: $($_.DisplayName)" }
-          Write-Host 'uninstall clean'
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: gh-windows
-          path: out
-          if-no-files-found: warn
 
   linux:
     name: Linux x64 deb and AppImage

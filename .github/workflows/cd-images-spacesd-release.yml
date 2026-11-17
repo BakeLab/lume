@@ -134,18 +134,6 @@ jobs:
       publish: true
       series: edge
 
-  windows:
-    needs: resolve
-    if: needs.resolve.outputs.build == 'true'
-    uses: ./.github/workflows/cd-image-windows.yml
-    permissions:
-      contents: write
-      packages: write
-    with:
-      stage: publish
-
-  # Builds cua-spacesd from this checkout (main at the release); its promote
-  # job opens the bench catalog PR itself.
   bench:
     needs: resolve
     if: needs.resolve.outputs.build == 'true'
@@ -161,7 +149,7 @@ jobs:
       push: true
 
   pins:
-    needs: [resolve, linux, omarchy, windows, bench]
+    needs: ["resolve", "linux", "omarchy", "bench"]
     # Also after a failed or skipped build: whatever did reach the version is
     # pinned, and the PR lists the rest as pending.
     if: ${{ !cancelled() && needs.resolve.result == 'success' }}
@@ -199,6 +187,6 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ needs.resolve.outputs.version }}
-          RESULTS: linux=${{ needs.linux.result }},omarchy=${{ needs.omarchy.result }},windows=${{ needs.windows.result }}
+          RESULTS: linux=${{ needs.linux.result }},omarchy=${{ needs.omarchy.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: scripts/images/pins-pr.sh "$VERSION" --results "$RESULTS" --run-url "$RUN_URL"

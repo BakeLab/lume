@@ -25,7 +25,7 @@ import sys
 
 DRIVER = "libs/cua-driver/rust/"
 LINUX, MACOS, WINDOWS = "linux", "macos", "windows"
-ALL_OS = (LINUX, MACOS, WINDOWS)
+ALL_OS = (LINUX, MACOS)
 
 # Files that can affect every lane and every OS.
 SHARED = (
@@ -58,7 +58,7 @@ DRIVER_COMMON = (
 LANES = {
     # `cargo metadata` in libs/cua-spacesd: its workspace plus these path crates.
     "spacesd": {
-        "labels": {LINUX: "ubuntu-latest", MACOS: "macos-26", WINDOWS: "windows-latest"},
+        "labels": {LINUX: "ubuntu-latest", MACOS: "macos-26"},
         "common": (
             r"libs/cua-spacesd/",
             *(DRIVER + f"crates/{c}/" for c in DRIVER_COMMON),
@@ -74,9 +74,9 @@ LANES = {
             r"libs/images/windows-2022/(enable-volume|volume-diagnostics)\.ps1",
         ),
     },
-    # Runs the driver CLI and the client SDKs on all three OSes.
+    # Runs the driver CLI and client SDKs on the fork's Linux and macOS lanes.
     "contract-clients": {
-        "labels": {LINUX: "ubuntu-latest", MACOS: "macos-latest", WINDOWS: "windows-latest"},
+        "labels": {LINUX: "ubuntu-latest", MACOS: "macos-latest"},
         "common": (
             r"libs/cua-driver/(contract|compat-fixtures|typescript|python|examples/agent-sdks)/",
             r"libs/cua-driver/scripts/(generate-uniffi-bindings|stage-uniffi-library|build-npm-packages)\.mjs",
@@ -119,6 +119,7 @@ def decide(lane: str, files: list[str], event: str, head_ref: str = "") -> tuple
                 why = why or f"{f} affects {plat[0]} only"
                 break
         # Anything else is outside the lane's dependency closure.
+    oses.intersection_update(ALL_OS)
     if not oses:
         return False, [], "no changed path is in this lane's dependency closure"
     return True, [cfg["labels"][o] for o in ALL_OS if o in oses], why

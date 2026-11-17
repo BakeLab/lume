@@ -123,7 +123,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26"]' || '["ubuntu-latest","macos-26","windows-latest"]') || '["ubuntu-latest","macos-26","windows-latest"]') }}
+        os: ${{ fromJSON((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26"]' || '["ubuntu-latest","macos-26"]') || '["ubuntu-latest","macos-26"]') }}
     defaults:
       run:
         working-directory: libs/cua
@@ -435,7 +435,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON('["macos-26","windows-latest"]') }}
+        os: ${{ fromJSON('["macos-26"]') }}
     defaults:
       run:
         working-directory: libs/cua
@@ -737,7 +737,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26","windows-latest"]' || '["ubuntu-latest","macos-26","windows-latest"]') || '["ubuntu-latest"]') }}
+        os: ${{ fromJSON((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26"]' || '["ubuntu-latest","macos-26"]') || '["ubuntu-latest"]') }}
     defaults:
       run:
         shell: bash
